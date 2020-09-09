@@ -2,6 +2,7 @@ from kh_common.exceptions.http_error import BadRequest, InternalServerError
 from kh_common.logging import getLogger
 from kh_common.sql import SqlInterface
 from typing import List
+from uuid import uuid4
 from PIL import Image
 
 
