@@ -25,7 +25,7 @@ class Tagger(SqlInterface) :
 			self.query("""
 				CALL kheina.public.add_tags(%s, %s, %s);
 				""",
-				(post_id, user_id, tags,),
+				(post_id, user_id, tags),
 				commit=True,
 			)
 
@@ -48,7 +48,7 @@ class Tagger(SqlInterface) :
 			self.query("""
 				CALL kheina.public.remove_tags(%s, %s, %s);
 				""",
-				(post_id, user_id, tags,),
+				(post_id, user_id, tags),
 				commit=True,
 			)
 
@@ -69,22 +69,24 @@ class Tagger(SqlInterface) :
 
 		try :
 			data = self.query("""
-				SELECT tag, class
+				SELECT class, array_agg(tag)
 				FROM kheina.public.tag_post
 					INNER JOIN tags
 						ON tags.tag_id = tag_post.tag_id
 					INNER JOIN tag_classes
 						ON tag_classes.class_id = tags.class_id
 				WHERE post_id = %s
-				UNION SELECT handle, relation
+				GROUP BY class
+				UNION SELECT relation, array_agg(handle)
 				FROM kheina.public.user_post
 					INNER JOIN relations
 						ON relations.relation_id = user_post.relation_id
 					INNER JOIN users
 						ON users.user_id = user_post.user_id
-				WHERE post_id = %s;
+				WHERE post_id = %s
+				GROUP BY relation;
 				""",
-				(post_id, user_id, tags,),
+				(post_id, post_id),
 				fetch_all=True,
 			)
 
@@ -99,9 +101,7 @@ class Tagger(SqlInterface) :
 
 		if data :
 			return {
-				'tags': {
-					post_id: dict(d)
-				}
+				post_id: dict(data)
 			}
 
 			refid = uuid4().hex
