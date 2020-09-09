@@ -18,6 +18,16 @@ class Tagger(SqlInterface) :
 			raise BadRequest('the given post id is invalid.', logdata={ 'post_id': post_id })
 
 
+	def validatePageNumber(self, page_number: int) :
+		if page_number < 1 :
+			raise BadRequest('the given page number is invalid.', logdata={ 'post_id': post_id })
+
+
+	def validateCount(self, count: int) :
+		if count < 1 :
+			raise BadRequest('the given count is invalid.', logdata={ 'post_id': post_id })
+
+
 	def addTags(self, post_id: str, user_id: int, tags: List[str]) :
 		self.validatePostId(post_id)
 
@@ -71,17 +81,17 @@ class Tagger(SqlInterface) :
 			data = self.query("""
 				SELECT class, array_agg(tag)
 				FROM kheina.public.tag_post
-					INNER JOIN tags
+					INNER JOIN kheina.public.tags
 						ON tags.tag_id = tag_post.tag_id
-					INNER JOIN tag_classes
+					INNER JOIN kheina.public.tag_classes
 						ON tag_classes.class_id = tags.class_id
 				WHERE post_id = %s
 				GROUP BY class
 				UNION SELECT relation, array_agg(handle)
 				FROM kheina.public.user_post
-					INNER JOIN relations
+					INNER JOIN kheina.public.relations
 						ON relations.relation_id = user_post.relation_id
-					INNER JOIN users
+					INNER JOIN kheina.public.users
 						ON users.user_id = user_post.user_id
 				WHERE post_id = %s
 				GROUP BY relation;
@@ -104,7 +114,35 @@ class Tagger(SqlInterface) :
 				post_id: dict(data)
 			}
 
-			refid = uuid4().hex
-			self.logger.exception({ 'refid': refid })
-
 		raise BadRequest('no tags were found for the provided post.', logdata={ 'post_id': post_id })
+
+
+	def fetchPosts(self, user_id: int, tags: List[str], count:int=64, page:int=1) :
+		self.validatePageNumber(page)
+		self.validateCount(count)
+
+		try :
+			self.query("""
+				CALL kheina.public.fetch_posts_by_tag(%s, %s, %s, %s);
+				""",
+				(tags, user_id, count, page - 1),
+				commit=True,
+			)
+
+		except :
+			refid = uuid4().hex
+			logdata = {
+				'refid': refid,
+				'page': page,
+				'user_id': user_id,
+				'tags': tags,
+			}
+			self.logger.exception(logdata)
+			raise InternalServerError('an error occurred while fetching posts.', logdata=logdata)
+
+		if data :
+			return {
+				'posts': data
+			}
+
+		raise BadRequest('no posts were found for the provided tags and page.', logdata={ 'tags': tags, 'page': page })
