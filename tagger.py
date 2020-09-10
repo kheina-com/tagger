@@ -110,10 +110,10 @@ class Tagger(SqlInterface) :
 				DELETE FROM kheina.public.user_post
 					USING user_handles
 						INNER JOIN users
-							ON user_handles.handle = users.handle;
+							ON user_handles.handle = users.handle
 					WHERE user_post.user_id = users.user_id
 						AND user_post.relation_id = kheina.public.relation_to_id(user_handles.relation)
-						AND tag_post.post_id = %s;
+						AND user_post.post_id = %s;
 				""",
 				params + [post_id],
 				commit=True,
@@ -162,6 +162,7 @@ class Tagger(SqlInterface) :
 				FROM kheina.public.tag_post
 					INNER JOIN kheina.public.tags
 						ON tags.tag_id = tag_post.tag_id
+							AND tags.deprecated = false
 					INNER JOIN kheina.public.tag_classes
 						ON tag_classes.class_id = tags.class_id
 				WHERE post_id = %s
@@ -225,3 +226,24 @@ class Tagger(SqlInterface) :
 			}
 
 		raise BadRequest('no posts were found for the provided tags and page.', logdata={ 'tags': tags, 'page': page })
+
+
+	def inheritTag(self, user_id: int, parent_tag: str, child_tag: str, deprecate:bool=False) :
+		try :
+			data = self.query("""
+				CALL kheina.public.inherit_tag(%s, %s, %s);
+				""",
+				(parent_tag, child_tag, deprecate),
+				commit=True,
+			)
+
+		except :
+			refid = uuid4().hex
+			logdata = {
+				'refid': refid,
+				'page': page,
+				'user_id': user_id,
+				'tags': tags,
+			}
+			self.logger.exception(logdata)
+			raise InternalServerError('an error occurred while adding a new tag inheritance.', logdata=logdata)
