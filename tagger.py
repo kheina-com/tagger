@@ -1,4 +1,5 @@
 from kh_common.exceptions.http_error import BadRequest, InternalServerError
+from psycopg2.errors import UniqueViolation
 from kh_common.logging import getLogger
 from kh_common.sql import SqlInterface
 from typing import Dict, List
@@ -51,14 +52,14 @@ class Tagger(SqlInterface) :
 			raise InternalServerError('an error occurred while adding tags for provided post.', logdata=logdata)
 
 
-	def addUsers(self, post_id: str, users: Dict[str, str]) :
+	def addUsers(self, post_id: str, user_id: int, users: Dict[str, str]) :
 		self.validatePostId(post_id)
 
 		with_query = []
 		params = []
 
 		for relation, user_list in users.items() :
-			querys.append("SELECT unnest(%s) AS handle, %s as relation")
+			with_query.append("SELECT unnest(%s) AS handle, %s as relation")
 			params += [user_list, relation]
 
 		try :
@@ -68,12 +69,53 @@ class Tagger(SqlInterface) :
 				WITH user_handles AS (
 					{' UNION '.join(with_query)}
 				)
-				SELECT users.user_id, kheina.public.relation_to_id(user_handles.relation)
+				SELECT %s, users.user_id, kheina.public.relation_to_id(user_handles.relation)
 				FROM user_handles
 					INNER JOIN users
 						ON user_handles.handle = users.handle;
 				""",
-				params + [post_id, all_users, relations],
+				params + [post_id],
+				commit=True,
+			)
+
+		except UniqueViolation :
+			raise BadRequest('one or more users already exist with the provided relation.')
+
+		except :
+			refid = uuid4().hex
+			logdata = {
+				'refid': refid,
+				'post_id': post_id,
+				'users': users,
+			}
+			self.logger.exception(logdata)
+			raise InternalServerError('an error occurred while adding tags for provided post.', logdata=logdata)
+
+
+	def removeUsers(self, post_id: str, user_id: int, users: Dict[str, str]) :
+		self.validatePostId(post_id)
+
+		with_query = []
+		params = []
+
+		for relation, user_list in users.items() :
+			with_query.append("SELECT unnest(%s) AS handle, %s as relation")
+			params += [user_list, relation]
+
+		try :
+			self.query(f"""
+				WITH user_handles AS (
+					{' UNION '.join(with_query)}
+				)
+				DELETE FROM kheina.public.user_post
+					USING user_handles
+						INNER JOIN users
+							ON user_handles.handle = users.handle;
+					WHERE user_post.user_id = users.user_id
+						AND user_post.relation_id = kheina.public.relation_to_id(user_handles.relation)
+						AND tag_post.post_id = %s;
+				""",
+				params + [post_id],
 				commit=True,
 			)
 
