@@ -54,20 +54,26 @@ class Tagger(SqlInterface) :
 	def addUsers(self, post_id: str, users: Dict[str, str]) :
 		self.validatePostId(post_id)
 
-		relations = []
-		all_users = []
+		with_query = []
+		params = []
 
 		for relation, user_list in users.items() :
-			relations += [relation] * len(user_list)
-			all_users += user_list
+			querys.append("SELECT unnest(%s) AS handle, %s as relation")
+			params += [user_list, relation]
 
 		try :
-			self.query("""
+			self.query(f"""
 				INSERT INTO kheina.public.user_post
-				(user_id, post_id, relation_id)
-				SELECT %s, unnest(%s), kheina.public.relation_to_id(unnest(%s));
+				(post_id, user_id, relation_id)
+				WITH user_handles AS (
+					{' UNION '.join(with_query)}
+				)
+				SELECT users.user_id, kheina.public.relation_to_id(user_handles.relation)
+				FROM user_handles
+					INNER JOIN users
+						ON user_handles.handle = users.handle;
 				""",
-				(post_id, all_users, relations),
+				params + [post_id, all_users, relations],
 				commit=True,
 			)
 
