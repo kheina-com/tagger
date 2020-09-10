@@ -153,50 +153,6 @@ class Tagger(SqlInterface) :
 			raise InternalServerError('an error occurred while removing tags for provided post.', logdata=logdata)
 
 
-	def fetchTags(self, post_id: str) :
-		self.validatePostId(post_id)
-
-		try :
-			data = self.query("""
-				SELECT class, array_agg(tag)
-				FROM kheina.public.tag_post
-					INNER JOIN kheina.public.tags
-						ON tags.tag_id = tag_post.tag_id
-							AND tags.deprecated = false
-					INNER JOIN kheina.public.tag_classes
-						ON tag_classes.class_id = tags.class_id
-				WHERE post_id = %s
-				GROUP BY class
-				UNION SELECT relation, array_agg(handle)
-				FROM kheina.public.user_post
-					INNER JOIN kheina.public.relations
-						ON relations.relation_id = user_post.relation_id
-					INNER JOIN kheina.public.users
-						ON users.user_id = user_post.user_id
-				WHERE post_id = %s
-				GROUP BY relation;
-				""",
-				(post_id, post_id),
-				fetch_all=True,
-			)
-
-		except :
-			refid = uuid4().hex
-			logdata = {
-				'refid': refid,
-				'post_id': post_id,
-			}
-			self.logger.exception(logdata)
-			raise InternalServerError('an error occurred while retrieving tags for provided post.', logdata=logdata)
-
-		if data :
-			return {
-				post_id: dict(data),
-			}
-
-		raise BadRequest('no tags were found for the provided post.', logdata={ 'post_id': post_id })
-
-
 	def fetchPosts(self, user_id: int, tags: List[str], count:int=64, page:int=1) :
 		self.validatePageNumber(page)
 		self.validateCount(count)
@@ -241,9 +197,98 @@ class Tagger(SqlInterface) :
 			refid = uuid4().hex
 			logdata = {
 				'refid': refid,
-				'page': page,
+				'parent_tag': parent_tag,
+				'child_tag': child_tag,
+				'deprecate': deprecate,
 				'user_id': user_id,
-				'tags': tags,
 			}
 			self.logger.exception(logdata)
 			raise InternalServerError('an error occurred while adding a new tag inheritance.', logdata=logdata)
+
+
+	def fetchTagsByPost(self, post_id: str) :
+		self.validatePostId(post_id)
+
+		try :
+			data = self.query("""
+				SELECT class, array_agg(tag)
+				FROM kheina.public.tag_post
+					INNER JOIN kheina.public.tags
+						ON tags.tag_id = tag_post.tag_id
+							AND tags.deprecated = false
+					INNER JOIN kheina.public.tag_classes
+						ON tag_classes.class_id = tags.class_id
+				WHERE post_id = %s
+				GROUP BY class
+				UNION SELECT relation, array_agg(handle)
+				FROM kheina.public.user_post
+					INNER JOIN kheina.public.relations
+						ON relations.relation_id = user_post.relation_id
+					INNER JOIN kheina.public.users
+						ON users.user_id = user_post.user_id
+				WHERE post_id = %s
+				GROUP BY relation;
+				""",
+				(post_id, post_id),
+				fetch_all=True,
+			)
+
+		except :
+			refid = uuid4().hex
+			logdata = {
+				'refid': refid,
+				'post_id': post_id,
+			}
+			self.logger.exception(logdata)
+			raise InternalServerError('an error occurred while retrieving tags for provided post.', logdata=logdata)
+
+		if data :
+			return {
+				post_id: dict(data),
+			}
+
+		raise BadRequest('no tags were found for the provided post.', logdata={ 'post_id': post_id })
+
+
+	def tagLookup(self, tag: str) :
+		if len(tag) < 1 :
+			raise BadRequest('tags must be at least one character long.')
+
+		try :
+			data = self.query("""
+				SELECT tag_classes.class, tags.tag, tags.deprecated, array_agg(t2.tag)
+				FROM tags
+				INNER JOIN tag_classes
+				ON tag_classes.class_id = tags.class_id
+				LEFT JOIN tag_inheritance
+				ON tag_inheritance.parent = tags.tag_id
+				LEFT JOIN tags as t2
+				ON t2.tag_id = tag_inheritance.child
+				WHERE tags.tag LIKE %s
+				GROUP BY tags.tag_id, tag_classes.class_id;
+				""",
+				(tag + '%',),
+				fetch_all=True,
+			)
+
+		except :
+			refid = uuid4().hex
+			logdata = {
+				'refid': refid,
+				'post_id': post_id,
+			}
+			self.logger.exception(logdata)
+			raise InternalServerError('an error occurred while retrieving tags for provided post.', logdata=logdata)
+
+		if data :
+			# class, tag, deprecated, children
+			tags = { }
+			for i in d:
+				if i[0] in a :
+					a[i[0]][i[1]] = { 'deprecated': i[2], 'children': [j for j in i[3] if j] }
+				else :
+					a[i[0]] = { i[1]: { 'deprecated': i[2], 'children': [j for j in i[3] if j] } }
+
+			return tags
+
+		raise BadRequest('no tags were found for the provided post.', logdata={ 'post_id': post_id })
