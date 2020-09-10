@@ -283,11 +283,11 @@ class Tagger(SqlInterface) :
 		if data :
 			# class, tag, deprecated, children
 			tags = { }
-			for i in d:
-				if i[0] in a :
-					a[i[0]][i[1]] = { 'deprecated': i[2], 'children': [j for j in i[3] if j] }
+			for i in data :
+				if i[0] in tags :
+					tags[i[0]][i[1]] = { 'deprecated': i[2], 'children': [j for j in i[3] if j] }
 				else :
-					a[i[0]] = { i[1]: { 'deprecated': i[2], 'children': [j for j in i[3] if j] } }
+					tags[i[0]] = { i[1]: { 'deprecated': i[2], 'children': [j for j in i[3] if j] } }
 
 			return tags
 
