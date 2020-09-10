@@ -1,7 +1,7 @@
 from kh_common.exceptions.http_error import BadRequest, InternalServerError
 from kh_common.logging import getLogger
 from kh_common.sql import SqlInterface
-from typing import List
+from typing import Dict, List
 from uuid import uuid4
 from PIL import Image
 
@@ -46,6 +46,37 @@ class Tagger(SqlInterface) :
 				'post_id': post_id,
 				'user_id': user_id,
 				'tags': tags,
+			}
+			self.logger.exception(logdata)
+			raise InternalServerError('an error occurred while adding tags for provided post.', logdata=logdata)
+
+
+	def addUsers(self, post_id: str, users: Dict[str, str]) :
+		self.validatePostId(post_id)
+
+		relations = []
+		all_users = []
+
+		for relation, user_list in users.items() :
+			relations += [relation] * len(user_list)
+			all_users += user_list
+
+		try :
+			self.query("""
+				INSERT INTO kheina.public.user_post
+				(user_id, post_id, relation_id)
+				SELECT %s, unnest(%s), kheina.public.relation_to_id(unnest(%s));
+				""",
+				(post_id, all_users, relations),
+				commit=True,
+			)
+
+		except :
+			refid = uuid4().hex
+			logdata = {
+				'refid': refid,
+				'post_id': post_id,
+				'users': users,
 			}
 			self.logger.exception(logdata)
 			raise InternalServerError('an error occurred while adding tags for provided post.', logdata=logdata)
@@ -111,7 +142,7 @@ class Tagger(SqlInterface) :
 
 		if data :
 			return {
-				post_id: dict(data)
+				post_id: dict(data),
 			}
 
 		raise BadRequest('no tags were found for the provided post.', logdata={ 'post_id': post_id })
@@ -122,11 +153,11 @@ class Tagger(SqlInterface) :
 		self.validateCount(count)
 
 		try :
-			self.query("""
-				CALL kheina.public.fetch_posts_by_tag(%s, %s, %s, %s);
+			data = self.query("""
+				SELECT kheina.public.fetch_posts_by_tag(%s, %s, %s, %s);
 				""",
 				(tags, user_id, count, page - 1),
-				commit=True,
+				fetch_all=True,
 			)
 
 		except :
@@ -142,7 +173,7 @@ class Tagger(SqlInterface) :
 
 		if data :
 			return {
-				'posts': data
+				'posts': [i[0] for i in data],
 			}
 
 		raise BadRequest('no posts were found for the provided tags and page.', logdata={ 'tags': tags, 'page': page })
