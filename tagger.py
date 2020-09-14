@@ -1,10 +1,10 @@
 from kh_common.exceptions.http_error import BadRequest, InternalServerError
 from psycopg2.errors import UniqueViolation
+from kh_common.caching import SimpleCache
 from kh_common.logging import getLogger
+from typing import Optional, Dict, List
 from kh_common.sql import SqlInterface
-from typing import Dict, List
 from uuid import uuid4
-from PIL import Image
 
 
 class Tagger(SqlInterface) :
@@ -21,12 +21,12 @@ class Tagger(SqlInterface) :
 
 	def validatePageNumber(self, page_number: int) :
 		if page_number < 1 :
-			raise BadRequest('the given page number is invalid.', logdata={ 'post_id': post_id })
+			raise BadRequest('the given page number is invalid.', logdata={ 'page_number': page_number })
 
 
 	def validateCount(self, count: int) :
 		if count < 1 :
-			raise BadRequest('the given count is invalid.', logdata={ 'post_id': post_id })
+			raise BadRequest('the given count is invalid.', logdata={ 'count': count })
 
 
 	def addTags(self, post_id: str, user_id: int, tags: List[str]) :
@@ -47,84 +47,6 @@ class Tagger(SqlInterface) :
 				'post_id': post_id,
 				'user_id': user_id,
 				'tags': tags,
-			}
-			self.logger.exception(logdata)
-			raise InternalServerError('an error occurred while adding tags for provided post.', logdata=logdata)
-
-
-	def addUsers(self, post_id: str, user_id: int, users: Dict[str, str]) :
-		self.validatePostId(post_id)
-
-		with_query = []
-		params = []
-
-		for relation, user_list in users.items() :
-			with_query.append("SELECT unnest(%s) AS handle, %s as relation")
-			params += [user_list, relation]
-
-		try :
-			self.query(f"""
-				INSERT INTO kheina.public.user_post
-				(post_id, user_id, relation_id)
-				WITH user_handles AS (
-					{' UNION '.join(with_query)}
-				)
-				SELECT %s, users.user_id, kheina.public.relation_to_id(user_handles.relation)
-				FROM user_handles
-					INNER JOIN users
-						ON user_handles.handle = users.handle;
-				""",
-				params + [post_id],
-				commit=True,
-			)
-
-		except UniqueViolation :
-			raise BadRequest('one or more users already exist with the provided relation.')
-
-		except :
-			refid = uuid4().hex
-			logdata = {
-				'refid': refid,
-				'post_id': post_id,
-				'users': users,
-			}
-			self.logger.exception(logdata)
-			raise InternalServerError('an error occurred while adding tags for provided post.', logdata=logdata)
-
-
-	def removeUsers(self, post_id: str, user_id: int, users: Dict[str, str]) :
-		self.validatePostId(post_id)
-
-		with_query = []
-		params = []
-
-		for relation, user_list in users.items() :
-			with_query.append("SELECT unnest(%s) AS handle, %s as relation")
-			params += [user_list, relation]
-
-		try :
-			self.query(f"""
-				WITH user_handles AS (
-					{' UNION '.join(with_query)}
-				)
-				DELETE FROM kheina.public.user_post
-					USING user_handles
-						INNER JOIN users
-							ON user_handles.handle = users.handle
-					WHERE user_post.user_id = users.user_id
-						AND user_post.relation_id = kheina.public.relation_to_id(user_handles.relation)
-						AND user_post.post_id = %s;
-				""",
-				params + [post_id],
-				commit=True,
-			)
-
-		except :
-			refid = uuid4().hex
-			logdata = {
-				'refid': refid,
-				'post_id': post_id,
-				'users': users,
 			}
 			self.logger.exception(logdata)
 			raise InternalServerError('an error occurred while adding tags for provided post.', logdata=logdata)
@@ -161,7 +83,7 @@ class Tagger(SqlInterface) :
 			data = self.query("""
 				SELECT kheina.public.fetch_posts_by_tag(%s, %s, %s, %s);
 				""",
-				(tags, user_id, count, page - 1),
+				(tags, user_id, count, count * (page - 1)),
 				fetch_all=True,
 			)
 
@@ -176,12 +98,9 @@ class Tagger(SqlInterface) :
 			self.logger.exception(logdata)
 			raise InternalServerError('an error occurred while fetching posts.', logdata=logdata)
 
-		if data :
-			return {
-				'posts': [i[0] for i in data],
-			}
-
-		raise BadRequest('no posts were found for the provided tags and page.', logdata={ 'tags': tags, 'page': page })
+		return {
+			'posts': [i[0] for i in data],
+		}
 
 
 	def inheritTag(self, user_id: int, parent_tag: str, child_tag: str, deprecate:bool=False) :
@@ -206,12 +125,52 @@ class Tagger(SqlInterface) :
 			raise InternalServerError('an error occurred while adding a new tag inheritance.', logdata=logdata)
 
 
+	def updateTag(self, user_id: int, tag: str, tag_class:str=None, owner:str=None) :
+		query = []
+		params = []
+
+		if tag_class :
+			query.append('SET class_id = tag_class_to_id(%s)')
+			params.append(tag_class)
+
+		if owner :
+			query.append('SET owner = user_to_id(%s)')
+			params.append(owner)
+
+		if not params :
+			raise BadRequest('no params were provided.')
+
+		try :
+			self.query(f"""
+				UPDATE kheina.public.tags
+				{',\n'.join(query)}
+				WHERE tags.tag = %s AND (
+					owner IS NULL
+					OR owner = %s
+				)
+				""",
+				params + [tag, user_id],
+				commit=True,
+			)
+
+		except :
+			refid = uuid4().hex
+			logdata = {
+				'refid': refid,
+				'post_id': post_id,
+				'user_id': user_id,
+				'tags': tags,
+			}
+			self.logger.exception(logdata)
+			raise InternalServerError('an error occurred while removing tags for provided post.', logdata=logdata)
+
+
 	def fetchTagsByPost(self, post_id: str) :
 		self.validatePostId(post_id)
 
 		try :
 			data = self.query("""
-				SELECT class, array_agg(tag)
+				SELECT tag_classes.class, array_agg(tags.tag)
 				FROM kheina.public.tag_post
 					INNER JOIN kheina.public.tags
 						ON tags.tag_id = tag_post.tag_id
@@ -219,15 +178,7 @@ class Tagger(SqlInterface) :
 					INNER JOIN kheina.public.tag_classes
 						ON tag_classes.class_id = tags.class_id
 				WHERE post_id = %s
-				GROUP BY class
-				UNION SELECT relation, array_agg(handle)
-				FROM kheina.public.user_post
-					INNER JOIN kheina.public.relations
-						ON relations.relation_id = user_post.relation_id
-					INNER JOIN kheina.public.users
-						ON users.user_id = user_post.user_id
-				WHERE post_id = %s
-				GROUP BY relation;
+				GROUP BY class;
 				""",
 				(post_id, post_id),
 				fetch_all=True,
@@ -250,24 +201,20 @@ class Tagger(SqlInterface) :
 		raise BadRequest('no tags were found for the provided post.', logdata={ 'post_id': post_id })
 
 
-	def tagLookup(self, tag: str) :
-		if len(tag) < 1 :
-			raise BadRequest('tags must be at least one character long.')
-
+	@SimpleCache(900)
+	def _pullAllTags(self) :
 		try :
 			data = self.query("""
 				SELECT tag_classes.class, tags.tag, tags.deprecated, array_agg(t2.tag)
 				FROM tags
-				INNER JOIN tag_classes
-				ON tag_classes.class_id = tags.class_id
-				LEFT JOIN tag_inheritance
-				ON tag_inheritance.parent = tags.tag_id
-				LEFT JOIN tags as t2
-				ON t2.tag_id = tag_inheritance.child
-				WHERE tags.tag LIKE %s
+					INNER JOIN tag_classes
+						ON tag_classes.class_id = tags.class_id
+					LEFT JOIN tag_inheritance
+						ON tag_inheritance.parent = tags.tag_id
+					LEFT JOIN tags as t2
+						ON t2.tag_id = tag_inheritance.child
 				GROUP BY tags.tag_id, tag_classes.class_id;
 				""",
-				(tag + '%',),
 				fetch_all=True,
 			)
 
@@ -275,20 +222,29 @@ class Tagger(SqlInterface) :
 			refid = uuid4().hex
 			logdata = {
 				'refid': refid,
-				'post_id': post_id,
+				'tag': tag,
 			}
 			self.logger.exception(logdata)
-			raise InternalServerError('an error occurred while retrieving tags for provided post.', logdata=logdata)
+			raise InternalServerError('an error occurred while retrieving tags.', logdata=logdata)
 
-		if data :
+		tags = { }
+		for i in data :
 			# class, tag, deprecated, children
-			tags = { }
-			for i in data :
-				if i[0] in tags :
-					tags[i[0]][i[1]] = { 'deprecated': i[2], 'children': [j for j in i[3] if j] }
-				else :
-					tags[i[0]] = { i[1]: { 'deprecated': i[2], 'children': [j for j in i[3] if j] } }
+			if i[0] in tags :
+				tags[i[0]][i[1]] = { 'deprecated': i[2], 'children': list(filter(None, i[3])) }
+			else :
+				tags[i[0]] = { i[1]: { 'deprecated': i[2], 'children': list(filter(None, i[3])) } }
 
-			return tags
+		return tags
 
-		raise BadRequest('no tags were found for the provided post.', logdata={ 'post_id': post_id })
+
+	def tagLookup(self, tag:Optional[str]=None) :
+		tag = tag or ''
+
+		tags = self._pullAllTags()
+
+		return {
+			t: data
+			for t, data in data.items()
+			if t.startswith(tag)
+		}
