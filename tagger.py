@@ -29,7 +29,7 @@ class Tagger(SqlInterface) :
 			raise BadRequest('the given count is invalid.', logdata={ 'count': count })
 
 
-	def addTags(self, post_id: str, user_id: int, tags: List[str]) :
+	def addTags(self, user_id: int, post_id: str, tags: List[str]) :
 		self.validatePostId(post_id)
 
 		try :
@@ -52,7 +52,7 @@ class Tagger(SqlInterface) :
 			raise InternalServerError('an error occurred while adding tags for provided post.', logdata=logdata)
 
 
-	def removeTags(self, post_id: str, user_id: int, tags: List[str]) :
+	def removeTags(self, user_id: int, post_id: str, tags: List[str]) :
 		self.validatePostId(post_id)
 
 		try :
@@ -106,9 +106,9 @@ class Tagger(SqlInterface) :
 	def inheritTag(self, user_id: int, parent_tag: str, child_tag: str, deprecate:bool=False) :
 		try :
 			data = self.query("""
-				CALL kheina.public.inherit_tag(%s, %s, %s);
+				CALL kheina.public.inherit_tag(%s, %s, %s, %s);
 				""",
-				(parent_tag, child_tag, deprecate),
+				(user_id, parent_tag, child_tag, deprecate),
 				commit=True,
 			)
 
@@ -125,7 +125,7 @@ class Tagger(SqlInterface) :
 			raise InternalServerError('an error occurred while adding a new tag inheritance.', logdata=logdata)
 
 
-	def updateTag(self, user_id: int, tag: str, tag_class:str=None, owner:str=None) :
+	def updateTag(self, user_id: int, tag: str, tag_class:str=None, owner:str=None, admin:bool=False) :
 		query = []
 		params = []
 
@@ -133,7 +133,7 @@ class Tagger(SqlInterface) :
 			query.append('SET class_id = tag_class_to_id(%s)')
 			params.append(tag_class)
 
-		if owner :
+		if owner and admin :
 			query.append('SET owner = user_to_id(%s)')
 			params.append(owner)
 
@@ -143,7 +143,7 @@ class Tagger(SqlInterface) :
 		try :
 			self.query(f"""
 				UPDATE kheina.public.tags
-				{',\n'.join(query)}
+				{','.join(query)}
 				WHERE tags.tag = %s AND (
 					owner IS NULL
 					OR owner = %s
@@ -165,7 +165,7 @@ class Tagger(SqlInterface) :
 			raise InternalServerError('an error occurred while removing tags for provided post.', logdata=logdata)
 
 
-	def fetchTagsByPost(self, post_id: str) :
+	def fetchTagsByPost(self, user_id: int, post_id: str) :
 		self.validatePostId(post_id)
 
 		try :
@@ -180,7 +180,7 @@ class Tagger(SqlInterface) :
 				WHERE post_id = %s
 				GROUP BY class;
 				""",
-				(post_id, post_id),
+				(post_id,),
 				fetch_all=True,
 			)
 
@@ -205,7 +205,7 @@ class Tagger(SqlInterface) :
 	def _pullAllTags(self) :
 		try :
 			data = self.query("""
-				SELECT tag_classes.class, tags.tag, tags.deprecated, array_agg(t2.tag)
+				SELECT tag_classes.class, tags.tag, tags.deprecated, array_agg(t2.tag), users.handle
 				FROM tags
 					INNER JOIN tag_classes
 						ON tag_classes.class_id = tags.class_id
@@ -213,7 +213,9 @@ class Tagger(SqlInterface) :
 						ON tag_inheritance.parent = tags.tag_id
 					LEFT JOIN tags as t2
 						ON t2.tag_id = tag_inheritance.child
-				GROUP BY tags.tag_id, tag_classes.class_id;
+					LEFT JOIN users
+						ON users.user_id = tags.owner
+				GROUP BY tags.tag_id, tag_classes.class_id, users.user_id;
 				""",
 				fetch_all=True,
 			)
@@ -229,11 +231,11 @@ class Tagger(SqlInterface) :
 
 		tags = { }
 		for i in data :
-			# class, tag, deprecated, children
+			# class, tag, deprecated, children, owner
 			if i[0] in tags :
-				tags[i[0]][i[1]] = { 'deprecated': i[2], 'children': list(filter(None, i[3])) }
+				tags[i[0]][i[1]] = { 'deprecated': i[2], 'children': list(filter(None, i[3])), 'owner': i[4] }
 			else :
-				tags[i[0]] = { i[1]: { 'deprecated': i[2], 'children': list(filter(None, i[3])) } }
+				tags[i[0]] = { i[1]: { 'deprecated': i[2], 'children': list(filter(None, i[3])), 'owner': i[4] } }
 
 		return tags
 
