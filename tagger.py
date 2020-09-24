@@ -9,6 +9,18 @@ from uuid import uuid4
 
 class Tagger(SqlInterface) :
 
+	_hash = 0
+
+	def __init__(self) :
+		SqlInterface.__init__(self)
+		self.hash = int.from_bytes(f"<class 'Tagger' {Tagger._hash}>".encode(), 'big')
+		Tagger._hash += 1
+
+
+	def __hash__(self) :
+		return self.hash
+
+
 	def _validatePostId(self, post_id: str) :
 		if len(post_id) != 8 :
 			raise BadRequest('the given post id is invalid.', logdata={ 'post_id': post_id })
