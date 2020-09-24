@@ -165,7 +165,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.routing import Route, Mount
 
 middleware = [
-	Middleware(TrustedHostMiddleware, allowed_hosts={ '127.0.0.1:5002', 'tags.kheina.com', 'tags-dev.kheina.com' }),
+	Middleware(TrustedHostMiddleware, allowed_hosts={ 'localhost', '127.0.0.1', 'tags.kheina.com', 'tags-dev.kheina.com' }),
 ]
 
 routes = [
