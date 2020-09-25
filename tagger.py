@@ -4,26 +4,25 @@ from typing import Optional, Dict, List, Tuple
 from psycopg2.errors import UniqueViolation
 from kh_common.logging import getLogger
 from kh_common.sql import SqlInterface
+from kh_common.hashing import Hashable
 from uuid import uuid4
 
 
-class Tagger(SqlInterface) :
-
-	_hash = 0
+class Tagger(SqlInterface, Hashable) :
 
 	def __init__(self) :
+		Hashable.__init__(self)
 		SqlInterface.__init__(self)
-		self.hash = int.from_bytes(f"<class 'Tagger' {Tagger._hash}>".encode(), 'big')
-		Tagger._hash += 1
-
-
-	def __hash__(self) :
-		return self.hash
 
 
 	def _validatePostId(self, post_id: str) :
 		if len(post_id) != 8 :
 			raise BadRequest('the given post id is invalid.', logdata={ 'post_id': post_id })
+	
+
+	def _validateAdmin(self, admin: bool) :
+		if not admin :
+			raise Forbidden('only admins are allowed to use this function.')
 
 
 	@ArgsCache(60)
@@ -76,6 +75,8 @@ class Tagger(SqlInterface) :
 
 	@ArgsCache(60)
 	def inheritTag(self, user_id: int, parent_tag: str, child_tag: str, deprecate:bool=False, admin:bool=False) :
+		self._validateAdmin(admin)
+
 		try :
 			data = self.query("""
 				CALL kheina.public.inherit_tag(%s, %s, %s, %s);
@@ -107,8 +108,7 @@ class Tagger(SqlInterface) :
 			params.append(tag_class)
 
 		if owner :
-			if not admin :
-				raise Forbidden('only admins are allowed to use this function.')
+			self._validateAdmin(admin)
 			query.append('SET owner = user_to_id(%s)')
 			params.append(owner)
 
@@ -146,15 +146,17 @@ class Tagger(SqlInterface) :
 
 		try :
 			data = self.query("""
-				SELECT tag_classes.class, array_agg(tags.tag)
-				FROM kheina.public.tag_post
-					INNER JOIN kheina.public.tags
+				SELECT posts.post_id, tag_classes.class, array_agg(tags.tag)
+				FROM kheina.public.posts
+					LEFT JOIN kheina.public.tag_post
+						ON tag_post.post_id = posts.post_id
+					LEFT JOIN kheina.public.tags
 						ON tags.tag_id = tag_post.tag_id
 							AND tags.deprecated = false
-					INNER JOIN kheina.public.tag_classes
+					LEFT JOIN kheina.public.tag_classes
 						ON tag_classes.class_id = tags.class_id
-				WHERE post_id = %s
-				GROUP BY class;
+				WHERE posts.post_id = %s
+				GROUP BY posts.post_id, tag_classes.class_id;
 				""",
 				(post_id,),
 				fetch_all=True,
@@ -171,7 +173,10 @@ class Tagger(SqlInterface) :
 
 		if data :
 			return {
-				post_id: dict(data),
+				post_id: {
+					i[1]: list(filter(None, i[2]))
+					for i in data
+				},
 			}
 
 		raise NotFound("the provided post does not exist or you don't have access to it.", logdata={ 'post_id': post_id })
