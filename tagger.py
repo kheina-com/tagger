@@ -176,6 +176,7 @@ class Tagger(SqlInterface, Hashable) :
 				post_id: {
 					i[1]: list(filter(None, i[2]))
 					for i in data
+					if i[1]
 				},
 			}
 
