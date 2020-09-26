@@ -1,6 +1,8 @@
-from kh_common.exceptions import checkJsonKeys, JsonErrorHandler
+from models import InheritRequest, PostRequest, TagsRequest, UpdateRequest
+from kh_common.auth import authenticated, TokenData
+from kh_common.exceptions import jsonErrorHandler
+from kh_common.validation import validatedJson
 from starlette.responses import UJSONResponse
-from kh_common.auth import AuthenticatedAsync
 from kh_common.logging import getLogger
 from traceback import format_tb
 from tagger import Tagger
@@ -11,9 +13,10 @@ logger = getLogger()
 tagger = Tagger()
 
 
-@JsonErrorHandler()
-@AuthenticatedAsync()
-async def v1AddTags(req, token_data={ }) :
+@jsonErrorHandler
+@authenticated
+@validatedJson
+async def v1AddTags(req: TagsRequest, token: TokenData) :
 	"""
 	{
 		"post_id": str,
@@ -22,21 +25,20 @@ async def v1AddTags(req, token_data={ }) :
 		]
 	}
 	"""
-	requestJson = await req.json()
-	checkJsonKeys(requestJson, ['post_id', 'tags'])
 
 	return UJSONResponse(
 		tagger.removeTags(
-			token_data['data']['user_id'],
-			requestJson['post_id'],
+			token.data['user_id'],
+			req.post_id,
 			tuple(requestJson['tags']),
 		)
 	)
 
 
-@JsonErrorHandler()
-@AuthenticatedAsync()
-async def v1RemoveTags(req, token_data={ }) :
+@jsonErrorHandler
+@authenticated
+@validatedJson
+async def v1RemoveTags(req: TagsRequest, token: TokenData) :
 	"""
 	{
 		"post_id": str,
@@ -45,21 +47,20 @@ async def v1RemoveTags(req, token_data={ }) :
 		]
 	}
 	"""
-	requestJson = await req.json()
-	checkJsonKeys(requestJson, ['post_id', 'tags'])
 
 	return UJSONResponse(
 		tagger.removeTags(
-			token_data['data']['user_id'],
-			requestJson['post_id'],
-			tuple(requestJson['tags']),
+			token.data['user_id'],
+			req.post_id,
+			tuple(req.tags),
 		)
 	)
 
 
-@JsonErrorHandler()
-@AuthenticatedAsync()
-async def v1InheritTag(req, token_data={ }) :
+@jsonErrorHandler
+@authenticated
+@validatedJson
+async def v1InheritTag(req: InheritRequest, token: TokenData) :
 	"""
 	{
 		"parent_tag": str,
@@ -68,23 +69,22 @@ async def v1InheritTag(req, token_data={ }) :
 		"admin": Optional[bool]
 	}
 	"""
-	requestJson = await req.json()
-	checkJsonKeys(requestJson, ['parent_tag', 'child_tag'])
 
 	return UJSONResponse(
 		tagger.inheritTag(
-			token_data['data']['user_id'],
-			requestJson['parent_tag'],
-			requestJson['child_tag'],
-			requestJson.get('deprecate'),
-			token_data['data'].get('admin'),
+			token.data['user_id'],
+			req.parent_tag,
+			req.child_tag,
+			req.deprecate,
+			token.data.get('admin'),
 		)
 	)
 
 
-@JsonErrorHandler()
-@AuthenticatedAsync()
-async def v1UpdateTag(req, token_data={ }) :
+@jsonErrorHandler
+@authenticated
+@validatedJson
+async def v1UpdateTag(req: UpdateRequest, token: TokenData) :
 	"""
 	{
 		"tag": str,
@@ -93,35 +93,32 @@ async def v1UpdateTag(req, token_data={ }) :
 		"admin": Optional[bool]
 	}
 	"""
-	requestJson = await req.json()
-	checkJsonKeys(requestJson, ['tag', 'tag_class'])
 
 	return UJSONResponse(
 		tagger.updateTag(
-			token_data['data']['user_id'],
-			requestJson['tag'],
-			requestJson['tag_class'],
-			requestJson.get('owner'),
-			token_data['data'].get('admin'),
+			token.data['user_id'],
+			UpdateRequest.tag,
+			UpdateRequest.tag_class,
+			UpdateRequest.owner,
+			token.data.get('admin'),
 		)
 	)
 
 
-@JsonErrorHandler()
-@AuthenticatedAsync()
-async def v1FetchTags(req, token_data={ }) :
+@jsonErrorHandler
+@authenticated
+@validatedJson
+async def v1FetchTags(req: PostRequest, token: TokenData) :
 	"""
 	{
 		"post_id": str
 	}
 	"""
-	requestJson = await req.json()
-	checkJsonKeys(requestJson, ['post_id'])
 
 	return UJSONResponse(
 		tagger.fetchTagsByPost(
-			token_data['data']['user_id'],
-			requestJson['post_id'],
+			token.data['user_id'],
+			req.post_id,
 		)
 	)
 

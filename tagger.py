@@ -1,6 +1,6 @@
 from kh_common.exceptions.http_error import BadRequest, Forbidden, NotFound, InternalServerError
 from kh_common.caching import ArgsCache, SimpleCache
-from typing import Optional, Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 from psycopg2.errors import UniqueViolation
 from kh_common.logging import getLogger
 from kh_common.sql import SqlInterface
