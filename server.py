@@ -16,29 +16,7 @@ tagger = Tagger()
 @jsonErrorHandler
 @authenticated
 @validatedJson
-async def v1AddTags(req: TagsRequest, token: TokenData) :
-	"""
-	{
-		"post_id": str,
-		"tags": [
-			str
-		]
-	}
-	"""
-
-	return UJSONResponse(
-		tagger.removeTags(
-			token.data['user_id'],
-			req.post_id,
-			tuple(requestJson['tags']),
-		)
-	)
-
-
-@jsonErrorHandler
-@authenticated
-@validatedJson
-async def v1RemoveTags(req: TagsRequest, token: TokenData) :
+async def v1AddTags(req: TagsRequest, token:TokenData=None) :
 	"""
 	{
 		"post_id": str,
@@ -60,7 +38,29 @@ async def v1RemoveTags(req: TagsRequest, token: TokenData) :
 @jsonErrorHandler
 @authenticated
 @validatedJson
-async def v1InheritTag(req: InheritRequest, token: TokenData) :
+async def v1RemoveTags(req: TagsRequest, token:TokenData=None) :
+	"""
+	{
+		"post_id": str,
+		"tags": [
+			str
+		]
+	}
+	"""
+
+	return UJSONResponse(
+		tagger.removeTags(
+			token.data['user_id'],
+			req.post_id,
+			tuple(req.tags),
+		)
+	)
+
+
+@jsonErrorHandler
+@authenticated
+@validatedJson
+async def v1InheritTag(req: InheritRequest, token:TokenData=None) :
 	"""
 	{
 		"parent_tag": str,
@@ -84,7 +84,7 @@ async def v1InheritTag(req: InheritRequest, token: TokenData) :
 @jsonErrorHandler
 @authenticated
 @validatedJson
-async def v1UpdateTag(req: UpdateRequest, token: TokenData) :
+async def v1UpdateTag(req: UpdateRequest, token:TokenData=None) :
 	"""
 	{
 		"tag": str,
@@ -108,7 +108,7 @@ async def v1UpdateTag(req: UpdateRequest, token: TokenData) :
 @jsonErrorHandler
 @authenticated
 @validatedJson
-async def v1FetchTags(req: PostRequest, token: TokenData) :
+async def v1FetchTags(req: PostRequest, token:TokenData=None) :
 	"""
 	{
 		"post_id": str
