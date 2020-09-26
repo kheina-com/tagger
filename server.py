@@ -27,7 +27,7 @@ async def v1AddTags(req: TagsRequest, token:TokenData=None) :
 	"""
 
 	return UJSONResponse(
-		tagger.removeTags(
+		tagger.v1AddTags(
 			token.data['user_id'],
 			req.post_id,
 			tuple(req.tags),
