@@ -2,6 +2,10 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 
+class LookupRequest(BaseModel) :
+	tag: str
+
+
 class PostRequest(BaseModel) :
 	post_id: str
 

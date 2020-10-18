@@ -1,4 +1,4 @@
-from models import InheritRequest, PostRequest, TagsRequest, UpdateRequest
+from models import InheritRequest, LookupRequest, PostRequest, TagsRequest, UpdateRequest
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from kh_common.exceptions import jsonErrorHandler
 from starlette.responses import UJSONResponse
@@ -115,6 +115,19 @@ async def v1FetchTags(req: Request, body: PostRequest) :
 			req.user.user_id,
 			body.post_id,
 		)
+	)
+
+
+@app.post('/v1/lookup_tags')
+async def v1FetchTags(req: Request, body: LookupRequest) :
+	"""
+	{
+		"tag": str
+	}
+	"""
+
+	return UJSONResponse(
+		tagger.tagLookup(body.tag)
 	)
 
 
