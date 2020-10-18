@@ -2,6 +2,7 @@ from models import InheritRequest, LookupRequest, PostRequest, TagsRequest, Upda
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from kh_common.exceptions import jsonErrorHandler
 from starlette.responses import UJSONResponse
+from kh_common.auth import KhAuthMiddleware
 from fastapi import FastAPI, Request
 from tagger import Tagger
 
@@ -9,6 +10,7 @@ from tagger import Tagger
 app = FastAPI()
 app.add_exception_handler(Exception, jsonErrorHandler)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts={ 'localhost', '127.0.0.1', 'tags.kheina.com', 'tags-dev.kheina.com' })
+app.add_middleware(KhAuthMiddleware)
 
 tagger = Tagger()
 
