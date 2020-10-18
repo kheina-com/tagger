@@ -1,22 +1,25 @@
 from models import InheritRequest, PostRequest, TagsRequest, UpdateRequest
-from kh_common.auth import authenticated, TokenData
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from kh_common.exceptions import jsonErrorHandler
-from kh_common.validation import validatedJson
 from starlette.responses import UJSONResponse
-from kh_common.logging import getLogger
-from traceback import format_tb
+from fastapi import FastAPI, Request
 from tagger import Tagger
-import time
 
 
-logger = getLogger()
+app = FastAPI()
+app.add_exception_handler(Exception, jsonErrorHandler)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts={ 'localhost', '127.0.0.1', 'tags.kheina.com', 'tags-dev.kheina.com' })
+
 tagger = Tagger()
 
 
-@jsonErrorHandler
-@authenticated
-@validatedJson
-async def v1AddTags(req: TagsRequest, token:TokenData=None) :
+@app.on_event('shutdown')
+async def shutdown() :
+	tagger.close()
+
+
+@app.post('/v1/add_tags')
+async def v1AddTags(req: Request, body: TagsRequest) :
 	"""
 	{
 		"post_id": str,
@@ -28,17 +31,15 @@ async def v1AddTags(req: TagsRequest, token:TokenData=None) :
 
 	return UJSONResponse(
 		tagger.addTags(
-			token.data['user_id'],
-			req.post_id,
-			tuple(req.tags),
+			req.user.user_id,
+			body.post_id,
+			tuple(body.tags),
 		)
 	)
 
 
-@jsonErrorHandler
-@authenticated
-@validatedJson
-async def v1RemoveTags(req: TagsRequest, token:TokenData=None) :
+@app.post('/v1/remove_tags')
+async def v1RemoveTags(req: Request, body: TagsRequest) :
 	"""
 	{
 		"post_id": str,
@@ -50,17 +51,15 @@ async def v1RemoveTags(req: TagsRequest, token:TokenData=None) :
 
 	return UJSONResponse(
 		tagger.removeTags(
-			token.data['user_id'],
-			req.post_id,
-			tuple(req.tags),
+			req.user.user_id,
+			body.post_id,
+			tuple(body.tags),
 		)
 	)
 
 
-@jsonErrorHandler
-@authenticated
-@validatedJson
-async def v1InheritTag(req: InheritRequest, token:TokenData=None) :
+@app.post('/v1/inherit_tag')
+async def v1InheritTag(req: Request, body: InheritRequest) :
 	"""
 	{
 		"parent_tag": str,
@@ -72,19 +71,17 @@ async def v1InheritTag(req: InheritRequest, token:TokenData=None) :
 
 	return UJSONResponse(
 		tagger.inheritTag(
-			token.data['user_id'],
-			req.parent_tag,
-			req.child_tag,
-			req.deprecate,
-			token.data.get('admin'),
+			req.user.user_id,
+			body.parent_tag,
+			body.child_tag,
+			body.deprecate,
+			'admin' in req.user.scopes,
 		)
 	)
 
 
-@jsonErrorHandler
-@authenticated
-@validatedJson
-async def v1UpdateTag(req: UpdateRequest, token:TokenData=None) :
+@app.post('/v1/update_tag')
+async def v1UpdateTag(req: Request, body: UpdateRequest) :
 	"""
 	{
 		"tag": str,
@@ -96,19 +93,17 @@ async def v1UpdateTag(req: UpdateRequest, token:TokenData=None) :
 
 	return UJSONResponse(
 		tagger.updateTag(
-			token.data['user_id'],
-			UpdateRequest.tag,
-			UpdateRequest.tag_class,
-			UpdateRequest.owner,
-			token.data.get('admin'),
+			req.user.user_id,
+			body.tag,
+			body.tag_class,
+			body.owner,
+			'admin' in req.user.scopes,
 		)
 	)
 
 
-@jsonErrorHandler
-@authenticated
-@validatedJson
-async def v1FetchTags(req: PostRequest, token:TokenData=None) :
+@app.post('/v1/fetch_tags')
+async def v1FetchTags(req: Request, body: PostRequest) :
 	"""
 	{
 		"post_id": str
@@ -117,68 +112,11 @@ async def v1FetchTags(req: PostRequest, token:TokenData=None) :
 
 	return UJSONResponse(
 		tagger.fetchTagsByPost(
-			token.data['user_id'],
-			req.post_id,
+			req.user.user_id,
+			body.post_id,
 		)
 	)
 
-
-async def v1Help(req) :
-	return UJSONResponse({
-		'/v1/create_post': {
-			'auth': {
-				'required': True,
-				'user_id': 'int',
-			},
-		},
-		'/v1/upload_image': {
-			'auth': {
-				'required': True,
-				'user_id': 'int',
-			},
-			'file': 'image',
-			'post_id': 'Optional[str]',
-		},
-		'/v1/update_post': {
-			'auth': {
-				'required': True,
-				'user_id': 'int',
-			},
-			'privacy': 'Optional[str]',
-			'title': 'Optional[str]',
-			'description': 'Optional[str]',
-		},
-	})
-
-
-async def shutdown() :
-	uploader.close()
-
-
-from starlette.applications import Starlette
-from starlette.staticfiles import StaticFiles
-from starlette.middleware import Middleware
-from starlette.middleware.trustedhost import TrustedHostMiddleware
-from starlette.routing import Route, Mount
-
-middleware = [
-	Middleware(TrustedHostMiddleware, allowed_hosts={ 'localhost', '127.0.0.1', 'tags.kheina.com', 'tags-dev.kheina.com' }),
-]
-
-routes = [
-	Route('/v1/add_tags', endpoint=v1AddTags, methods=('POST',)),
-	Route('/v1/remove_tags', endpoint=v1RemoveTags, methods=('POST',)),
-	Route('/v1/inherit_tag', endpoint=v1InheritTag, methods=('POST',)),
-	Route('/v1/update_tag', endpoint=v1UpdateTag, methods=('POST',)),
-	Route('/v1/fetch_tags', endpoint=v1FetchTags, methods=('POST',)),
-	Route('/v1/help', endpoint=v1Help, methods=('GET',)),
-]
-
-app = Starlette(
-	routes=routes,
-	middleware=middleware,
-	on_shutdown=[shutdown],
-)
 
 if __name__ == '__main__' :
 	from uvicorn.main import run
