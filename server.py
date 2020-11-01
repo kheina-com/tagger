@@ -9,7 +9,7 @@ from tagger import Tagger
 
 app = FastAPI()
 app.add_exception_handler(Exception, jsonErrorHandler)
-app.add_middleware(TrustedHostMiddleware, allowed_hosts={ 'localhost', '127.0.0.1', 'tags.kheina.com', 'tags-dev.kheina.com' })
+app.add_middleware(TrustedHostMiddleware, allowed_hosts={ 'localhost', '127.0.0.1', '*.kheina.com' })
 app.add_middleware(KhAuthMiddleware)
 
 tagger = Tagger()
@@ -135,4 +135,4 @@ async def v1FetchTags(req: Request, body: LookupRequest) :
 
 if __name__ == '__main__' :
 	from uvicorn.main import run
-	run(app, host='127.0.0.1', port=5002)
+	run(app, host='0.0.0.0', port=5002)
