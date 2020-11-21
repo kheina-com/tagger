@@ -1,17 +1,9 @@
 from models import InheritRequest, LookupRequest, PostRequest, TagsRequest, UpdateRequest
-from starlette.middleware.trustedhost import TrustedHostMiddleware
-from kh_common.exceptions import jsonErrorHandler
-from starlette.responses import UJSONResponse
-from kh_common.auth import KhAuthMiddleware
-from fastapi import FastAPI, Request
+from kh_common.server import Request, ServerApp, UJSONResponse
 from tagger import Tagger
 
 
-app = FastAPI()
-app.add_exception_handler(Exception, jsonErrorHandler)
-app.add_middleware(TrustedHostMiddleware, allowed_hosts={ 'localhost', '127.0.0.1', '*.kheina.com' })
-app.add_middleware(KhAuthMiddleware)
-
+app = ServerApp(auth=False)
 tagger = Tagger()
 
 
