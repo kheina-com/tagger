@@ -18,7 +18,7 @@ class Tagger(SqlInterface, Hashable) :
 	def _validatePostId(self, post_id: str) :
 		if len(post_id) != 8 :
 			raise BadRequest('the given post id is invalid.', logdata={ 'post_id': post_id })
-	
+
 
 	def _validateAdmin(self, admin: bool) :
 		if not admin :
