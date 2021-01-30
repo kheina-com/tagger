@@ -46,7 +46,7 @@ async def v1InheritTag(req: Request, body: InheritRequest) :
 			body.parent_tag,
 			body.child_tag,
 			body.deprecate,
-			Scope.admin in req.user.scopes,
+			Scope.admin in req.user.scope,
 		)
 	)
 
@@ -60,7 +60,7 @@ async def v1UpdateTag(req: Request, body: UpdateRequest) :
 			body.tag,
 			body.tag_class,
 			body.owner,
-			Scope.mod in req.user.scopes,
+			Scope.mod in req.user.scope,
 		)
 	)
 
