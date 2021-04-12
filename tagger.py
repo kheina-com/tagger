@@ -57,7 +57,7 @@ class Tagger(SqlInterface, Hashable) :
 			self.query("""
 				CALL kheina.public.remove_tags(%s, %s, %s);
 				""",
-				(post_id, user_id, list(map(str.lower, map(str.strip, tags)))),
+				(post_id, user_id, list(map(str.lower, tags))),
 				commit=True,
 			)
 
