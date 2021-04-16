@@ -1,4 +1,4 @@
-from kh_common.exceptions.http_error import BadRequest, Forbidden, NotFound, InternalServerError
+from kh_common.exceptions.http_error import BadRequest, Forbidden, NotFound, InternalServerError, HttpErrorHandler
 from kh_common.caching import ArgsCache, SimpleCache
 from typing import Dict, List, Optional, Tuple
 from psycopg2.errors import UniqueViolation
@@ -26,79 +26,46 @@ class Tagger(SqlInterface, Hashable) :
 
 
 	@ArgsCache(60)
+	@HttpErrorHandler('adding tags to post')
 	def addTags(self, user_id: int, post_id: str, tags: Tuple[str]) :
 		self._validatePostId(post_id)
 
-		try :
-			self.query("""
-				CALL kheina.public.add_tags(%s, %s, %s);
-				""",
-				(post_id, user_id, list(map(str.lower, tags))),
-				commit=True,
-			)
-
-		except :
-			refid = uuid4().hex
-			logdata = {
-				'refid': refid,
-				'post_id': post_id,
-				'user_id': user_id,
-				'tags': tags,
-			}
-			self.logger.exception(logdata)
-			raise InternalServerError('an error occurred while adding tags for provided post.', logdata=logdata)
+		self.query("""
+			CALL kheina.public.add_tags(%s, %s, %s);
+			""",
+			(post_id, user_id, list(map(str.lower, tags))),
+			commit=True,
+		)
 
 
 	@ArgsCache(60)
+	@HttpErrorHandler('removing tags from post')
 	def removeTags(self, user_id: int, post_id: str, tags: Tuple[str]) :
 		self._validatePostId(post_id)
 
-		try :
-			self.query("""
-				CALL kheina.public.remove_tags(%s, %s, %s);
-				""",
-				(post_id, user_id, list(map(str.lower, tags))),
-				commit=True,
-			)
-
-		except :
-			refid = uuid4().hex
-			logdata = {
-				'refid': refid,
-				'post_id': post_id,
-				'user_id': user_id,
-				'tags': tags,
-			}
-			self.logger.exception(logdata)
-			raise InternalServerError('an error occurred while removing tags for provided post.', logdata=logdata)
+		self.query("""
+			CALL kheina.public.remove_tags(%s, %s, %s);
+			""",
+			(post_id, user_id, list(map(str.lower, tags))),
+			commit=True,
+		)
 
 
 	@ArgsCache(60)
+	@HttpErrorHandler('inheriting a tag')
 	def inheritTag(self, user_id: int, parent_tag: str, child_tag: str, deprecate:bool=False, admin:bool=False) :
 		self._validateAdmin(admin)
 
-		try :
-			data = self.query("""
-				CALL kheina.public.inherit_tag(%s, %s, %s, %s);
-				""",
-				(user_id, parent_tag, child_tag, deprecate),
-				commit=True,
-			)
-
-		except :
-			refid = uuid4().hex
-			logdata = {
-				'refid': refid,
-				'parent_tag': parent_tag,
-				'child_tag': child_tag,
-				'deprecate': deprecate,
-				'user_id': user_id,
-			}
-			self.logger.exception(logdata)
-			raise InternalServerError('an error occurred while adding a new tag inheritance.', logdata=logdata)
+		data = self.query("""
+			CALL kheina.public.inherit_tag(%s, %s, %s, %s);
+			""",
+			(user_id, parent_tag, child_tag, deprecate),
+			commit=True,
+		)
 
 
 	@ArgsCache(60)
+	@HttpErrorHandler('updating a tag')
 	def updateTag(self, user_id: int, tag: str, tag_class:str=None, owner:str=None, admin:bool=False) :
 		query = []
 		params = []
@@ -115,69 +82,68 @@ class Tagger(SqlInterface, Hashable) :
 		if not params :
 			raise BadRequest('no params were provided.')
 
-		try :
-			self.query(f"""
-				UPDATE kheina.public.tags
-				{','.join(query)}
-				WHERE tags.tag = %s AND (
-					owner IS NULL
-					OR owner = %s
-				)
-				""",
-				params + [tag, user_id],
-				commit=True,
+		self.query(f"""
+			UPDATE kheina.public.tags
+			{','.join(query)}
+			WHERE tags.tag = %s AND (
+				owner IS NULL
+				OR owner = %s
 			)
-
-		except :
-			refid = uuid4().hex
-			logdata = {
-				'refid': refid,
-				'post_id': post_id,
-				'user_id': user_id,
-				'tags': tags,
-			}
-			self.logger.exception(logdata)
-			raise InternalServerError('an error occurred while removing tags for provided post.', logdata=logdata)
+			""",
+			params + [tag, user_id],
+			commit=True,
+		)
 
 
 	@ArgsCache(60)
-	def fetchTagsByPost(self, user_id: int, post_id: str) :
+	@HttpErrorHandler('fetching user-owned tags')
+	def fetchTagsByUser(self, handle: str) :
+		data = self.query("""
+			SELECT tags.tag
+			FROM kheina.public.users
+				INNER JOIN kheina.public.tags
+					ON tags.owner = users.user_id
+			WHERE lower(users.handle) = %s;
+			""",
+			(handle.lower(),),
+			fetch_all=True,
+		)
+
+		if not data :
+			raise NotFound('the provided user does not exist or the user does not own any tags.', logdata={ 'handle': handle })
+
+		return [
+			i[0] for i in data
+		]
+
+
+	@ArgsCache(60)
+	@HttpErrorHandler('fetching tags by post')
+	def fetchTagsByPost(self, post_id: str) :
 		self._validatePostId(post_id)
 
-		try :
-			data = self.query("""
-				SELECT posts.post_id, tag_classes.class, array_agg(tags.tag)
-				FROM kheina.public.posts
-					LEFT JOIN kheina.public.tag_post
-						ON tag_post.post_id = posts.post_id
-					LEFT JOIN kheina.public.tags
-						ON tags.tag_id = tag_post.tag_id
-							AND tags.deprecated = false
-					LEFT JOIN kheina.public.tag_classes
-						ON tag_classes.class_id = tags.class_id
-				WHERE posts.post_id = %s
-				GROUP BY posts.post_id, tag_classes.class_id;
-				""",
-				(post_id,),
-				fetch_all=True,
-			)
-
-		except :
-			refid = uuid4().hex
-			logdata = {
-				'refid': refid,
-				'post_id': post_id,
-			}
-			self.logger.exception(logdata)
-			raise InternalServerError('an error occurred while retrieving tags for provided post.', logdata=logdata)
+		data = self.query("""
+			SELECT posts.post_id, tag_classes.class, array_agg(tags.tag)
+			FROM kheina.public.posts
+				LEFT JOIN kheina.public.tag_post
+					ON tag_post.post_id = posts.post_id
+				LEFT JOIN kheina.public.tags
+					ON tags.tag_id = tag_post.tag_id
+						AND tags.deprecated = false
+				LEFT JOIN kheina.public.tag_classes
+					ON tag_classes.class_id = tags.class_id
+			WHERE posts.post_id = %s
+			GROUP BY posts.post_id, tag_classes.class_id;
+			""",
+			(post_id,),
+			fetch_all=True,
+		)
 
 		if data :
 			return {
-				post_id: {
-					i[1]: list(filter(None, i[2]))
-					for i in data
-					if i[1]
-				},
+				i[1]: list(filter(None, i[2]))
+				for i in data
+				if i[1]
 			}
 
 		raise NotFound("the provided post does not exist or you don't have access to it.", logdata={ 'post_id': post_id })
@@ -185,35 +151,26 @@ class Tagger(SqlInterface, Hashable) :
 
 	@SimpleCache(60)
 	def _pullAllTags(self) :
-		try :
-			data = self.query("""
-				SELECT tag_classes.class, tags.tag, tags.deprecated, array_agg(t2.tag), users.handle
-				FROM tags
-					INNER JOIN tag_classes
-						ON tag_classes.class_id = tags.class_id
-					LEFT JOIN tag_inheritance
-						ON tag_inheritance.parent = tags.tag_id
-					LEFT JOIN tags as t2
-						ON t2.tag_id = tag_inheritance.child
-					LEFT JOIN users
-						ON users.user_id = tags.owner
-				GROUP BY tags.tag_id, tag_classes.class_id, users.user_id;
-				""",
-				fetch_all=True,
-			)
-
-		except :
-			refid = uuid4().hex
-			logdata = {
-				'refid': refid,
-				'tag': tag,
-			}
-			self.logger.exception(logdata)
-			raise InternalServerError('an error occurred while retrieving tags.', logdata=logdata)
+		data = self.query("""
+			SELECT tag_classes.class, tags.tag, tags.deprecated, array_agg(t2.tag), users.handle
+			FROM tags
+				INNER JOIN tag_classes
+					ON tag_classes.class_id = tags.class_id
+				LEFT JOIN tag_inheritance
+					ON tag_inheritance.parent = tags.tag_id
+				LEFT JOIN tags as t2
+					ON t2.tag_id = tag_inheritance.child
+				LEFT JOIN users
+					ON users.user_id = tags.owner
+			GROUP BY tags.tag_id, tag_classes.class_id, users.user_id;
+			""",
+			fetch_all=True,
+		)
 
 		return data
 
 
+	@HttpErrorHandler('looking up tags')
 	def tagLookup(self, tag:Optional[str]=None) :
 		tag = tag or ''
 
