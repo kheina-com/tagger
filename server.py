@@ -78,7 +78,7 @@ async def v1FetchTags(body: LookupRequest) :
 
 
 @app.get('/v1/get_user_tags/{handle}')
-async def v1FetchUserTags(handle: str)
+async def v1FetchUserTags(handle: str) :
 	return UJSONResponse(
 		tagger.fetchTagsByUser(handle),
 	)
