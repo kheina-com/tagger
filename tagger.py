@@ -123,7 +123,7 @@ class Tagger(SqlInterface, Hashable) :
 		self._validatePostId(post_id)
 
 		data = self.query("""
-			SELECT posts.post_id, tag_classes.class, array_agg(tags.tag)
+			SELECT tag_classes.class, array_agg(tags.tag)
 			FROM kheina.public.posts
 				LEFT JOIN kheina.public.tag_post
 					ON tag_post.post_id = posts.post_id
@@ -133,7 +133,7 @@ class Tagger(SqlInterface, Hashable) :
 				LEFT JOIN kheina.public.tag_classes
 					ON tag_classes.class_id = tags.class_id
 			WHERE posts.post_id = %s
-			GROUP BY posts.post_id, tag_classes.class_id;
+			GROUP BY tag_classes.class_id;
 			""",
 			(post_id,),
 			fetch_all=True,
@@ -141,9 +141,9 @@ class Tagger(SqlInterface, Hashable) :
 
 		if data :
 			return {
-				i[1]: list(filter(None, i[2]))
+				i[0]: list(filter(None, i[1]))
 				for i in data
-				if i[1]
+				if i[0]
 			}
 
 		raise NotFound("the provided post does not exist or you don't have access to it.", logdata={ 'post_id': post_id })

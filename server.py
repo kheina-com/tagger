@@ -61,12 +61,10 @@ async def v1UpdateTag(req: Request, body: UpdateRequest) :
 	return NoContentResponse
 
 
-@app.post('/v1/fetch_tags')
-async def v1FetchTags(body: PostRequest) :
+@app.get('/v1/fetch_tags/{post_id}')
+async def v1FetchTags(post_id: str) :
 	return UJSONResponse(
-		tagger.fetchTagsByPost(
-			body.post_id,
-		)
+		tagger.fetchTagsByPost(post_id),
 	)
 
 
