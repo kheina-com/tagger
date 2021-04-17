@@ -174,6 +174,7 @@ class Tagger(SqlInterface, Hashable) :
 	def tagLookup(self, tag:Optional[str]=None) :
 		tag = tag or ''
 
+		# class, tag, deprecated, array(child tag), handle
 		data = self._pullAllTags()
 
 		tags = { }
@@ -187,3 +188,23 @@ class Tagger(SqlInterface, Hashable) :
 				tags[i[0]] = { i[1]: { 'deprecated': i[2], 'inherited_tags': list(filter(None, i[3])), 'owner': i[4] } }
 
 		return tags
+
+
+	@HttpErrorHandler('fetching tag')
+	def fetchTag(self, tag: str) :
+		# class, tag, deprecated, array(child tag), handle
+		data = self._pullAllTags()
+
+		try :
+			row = next(filter(lambda x : x[1] == tag, data))
+
+		except StopIteration :
+			raise NotFound("the provided tag does not exist.", logdata={ 'tag': tag })
+
+		return {
+			'class': row[0],
+			'tag': row[1],
+			'deprecated': row[2],
+			'inherited_tags': list(filter(None, row[3])),
+			'owner': row[4],
+		}
