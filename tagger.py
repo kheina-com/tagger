@@ -177,7 +177,7 @@ class Tagger(SqlInterface, Hashable) :
 					'handle': row[4],
 					'name': row[5],
 					'icon': row[6],
-				},
+				} if row[4] else None,
 			}
 			for row in data
 		}
