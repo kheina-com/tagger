@@ -5,6 +5,7 @@ from psycopg2.errors import UniqueViolation
 from kh_common.logging import getLogger
 from kh_common.sql import SqlInterface
 from kh_common.hashing import Hashable
+from copy import deepcopy
 from uuid import uuid4
 
 
@@ -152,7 +153,7 @@ class Tagger(SqlInterface, Hashable) :
 	@SimpleCache(60)
 	def _pullAllTags(self) :
 		data = self.query("""
-			SELECT tag_classes.class, tags.tag, tags.deprecated, array_agg(t2.tag), users.handle
+			SELECT tag_classes.class, tags.tag, tags.deprecated, array_agg(t2.tag), users.handle, users.display_name, users.icon
 			FROM tags
 				INNER JOIN tag_classes
 					ON tag_classes.class_id = tags.class_id
@@ -167,44 +168,52 @@ class Tagger(SqlInterface, Hashable) :
 			fetch_all=True,
 		)
 
-		return data
+		return {
+			row[1]: {
+				'class': row[0],
+				'deprecated': row[2],
+				'inherited_tags': list(filter(None, row[3])),
+				'owner': {
+					'handle': row[4],
+					'name': row[5],
+					'icon': row[6],
+				},
+			}
+			for row in data
+		}
 
 
 	@HttpErrorHandler('looking up tags')
 	def tagLookup(self, tag:Optional[str]=None) :
-		tag = tag or ''
+		t = tag or ''
 
-		# class, tag, deprecated, array(child tag), handle
 		data = self._pullAllTags()
-
 		tags = { }
-		for i in data :
-			if not i[1].startswith(tag) :
+
+		for tag, load in deepcopy(data).items() :
+
+			if not t.startswith(t) :
 				continue
 
-			if i[0] in tags :
-				tags[i[0]][i[1]] = { 'deprecated': i[2], 'inherited_tags': list(filter(None, i[3])), 'owner': i[4] }
+			tag_class = load.pop('class')
+
+			if tag_class in tags :
+				tags[tag_class][tag] = load
+
 			else :
-				tags[i[0]] = { i[1]: { 'deprecated': i[2], 'inherited_tags': list(filter(None, i[3])), 'owner': i[4] } }
+				tags[tag_class] = { tag: load }
 
 		return tags
 
 
 	@HttpErrorHandler('fetching tag')
 	def fetchTag(self, tag: str) :
-		# class, tag, deprecated, array(child tag), handle
 		data = self._pullAllTags()
 
-		try :
-			row = next(filter(lambda x : x[1] == tag, data))
-
-		except StopIteration :
-			raise NotFound("the provided tag does not exist.", logdata={ 'tag': tag })
+		if tag not in data :
+			raise NotFound('the provided tag does not exist.', logdata={ 'tag': tag })
 
 		return {
-			'class': row[0],
-			'tag': row[1],
-			'deprecated': row[2],
-			'inherited_tags': list(filter(None, row[3])),
-			'owner': row[4],
+			'tag': tag,
+			**data[tag],
 		}
