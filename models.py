@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 
 class LookupRequest(BaseModel) :
-	tag: str
+	tag: Optional[str]
 
 
 class PostRequest(BaseModel) :
