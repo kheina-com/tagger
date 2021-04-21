@@ -142,7 +142,7 @@ class Tagger(SqlInterface, Hashable) :
 
 		if data :
 			return {
-				i[0]: list(filter(None, i[1]))
+				i[0]: sorted(filter(None, i[1]))
 				for i in data
 				if i[0]
 			}
