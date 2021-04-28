@@ -110,8 +110,9 @@ class Tagger(SqlInterface, Hashable) :
 				WHERE tags.tag = %s
 				""",
 				params + [tag],
-				commit=True,
 			)
+
+			transaction.commit()
 
 
 	@ArgsCache(60)
