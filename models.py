@@ -23,6 +23,7 @@ class InheritRequest(BaseModel) :
 
 class UpdateRequest(BaseModel) :
 	tag: str
+	name: Optional[str]
 	tag_class: Optional[str]
 	owner: Optional[str]
 	admin: Optional[bool]

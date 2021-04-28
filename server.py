@@ -52,8 +52,9 @@ async def v1InheritTag(req: Request, body: InheritRequest) :
 async def v1UpdateTag(req: Request, body: UpdateRequest) :
 	req.user.authenticated()
 	tagger.updateTag(
-		req.user.user_id,
+		req.user,
 		body.tag,
+		body.name,
 		body.tag_class,
 		body.owner,
 		Scope.mod in req.user.scope,

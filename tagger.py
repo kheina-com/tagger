@@ -5,6 +5,8 @@ from psycopg2.errors import UniqueViolation
 from kh_common.logging import getLogger
 from kh_common.sql import SqlInterface
 from kh_common.hashing import Hashable
+from kh_common.models import KhUser
+from kh_common.auth import Scope
 from copy import deepcopy
 from uuid import uuid4
 
@@ -23,7 +25,7 @@ class Tagger(SqlInterface, Hashable) :
 
 	def _validateAdmin(self, admin: bool) :
 		if not admin :
-			raise Forbidden('only admins are allowed to use this function.')
+			raise Forbidden('You must be the tag owner or a mod to edit a tag.')
 
 
 	@ArgsCache(60)
@@ -67,55 +69,66 @@ class Tagger(SqlInterface, Hashable) :
 
 	@ArgsCache(60)
 	@HttpErrorHandler('updating a tag')
-	def updateTag(self, user_id: int, tag: str, tag_class:str=None, owner:str=None, admin:bool=False) :
+	def updateTag(self, user: KhUser, tag: str, name:str=None, tag_class:str=None, owner:str=None) :
 		query = []
 		params = []
 
-		if tag_class :
-			query.append('SET class_id = tag_class_to_id(%s)')
-			params.append(tag_class)
-
-		if owner :
-			self._validateAdmin(admin)
-			query.append('SET owner = user_to_id(%s)')
-			params.append(owner)
-
-		if not params :
+		if not any([name, tag_class, owner]) :
 			raise BadRequest('no params were provided.')
 
-		self.query(f"""
-			UPDATE kheina.public.tags
-			{','.join(query)}
-			WHERE tags.tag = %s AND (
-				owner IS NULL
-				OR owner = %s
+		with self.transaction() as transaction :
+			data = transaction.query(
+				"""
+				SELECT tags.owner
+				FROM kheina.public.tags
+				WHERE tags.tag = %s
+				""",
+				(tag,),
+				fetch_one=True,
 			)
-			""",
-			params + [tag, user_id],
-			commit=True,
-		)
+
+			current_owner = data[0] if data else None
+
+			if user.user_id != current_owner and Scope.mod not in req.user.scope, :
+				raise Forbidden('You must be the tag owner or a mod to edit a tag.')
+
+			if tag_class :
+				query.append('SET class_id = tag_class_to_id(%s)')
+				params.append(tag_class)
+
+			if name :
+				query.append('SET tag = %s')
+				params.append(name)
+
+			if owner :
+				query.append('SET owner = user_to_id(%s)')
+				params.append(owner)
+
+			transaction.query(f"""
+				UPDATE kheina.public.tags
+				{','.join(query)}
+				WHERE tags.tag = %s
+				""",
+				params + [tag],
+				commit=True,
+			)
 
 
 	@ArgsCache(60)
 	@HttpErrorHandler('fetching user-owned tags')
 	def fetchTagsByUser(self, handle: str) :
-		data = self.query("""
-			SELECT tags.tag
-			FROM kheina.public.users
-				INNER JOIN kheina.public.tags
-					ON tags.owner = users.user_id
-			WHERE lower(users.handle) = %s;
-			""",
-			(handle.lower(),),
-			fetch_all=True,
-		)
+		data = [
+			{
+				'tag': tag,
+				**load,
+			}
+			for tag, load in self._pullAllTags().items() if load['owner'] == handle
+		]
 
 		if not data :
 			raise NotFound('the provided user does not exist or the user does not own any tags.', logdata={ 'handle': handle })
 
-		return [
-			i[0] for i in data
-		]
+		return data
 
 
 	@ArgsCache(60)
