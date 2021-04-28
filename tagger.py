@@ -94,21 +94,21 @@ class Tagger(SqlInterface, Hashable) :
 				raise Forbidden('You must be the tag owner or a mod to edit a tag.')
 
 			if tag_class :
-				query.append('SET class_id = tag_class_to_id(%s)')
+				query.append('class_id = tag_class_to_id(%s)')
 				params.append(tag_class)
 
 			if name :
-				query.append('SET tag = %s')
+				query.append('tag = %s')
 				params.append(name)
 
 			if owner :
-				query.append('SET owner = user_to_id(%s)')
+				query.append('owner = user_to_id(%s)')
 				params.append(owner)
 
 			try :
 				transaction.query(f"""
 					UPDATE kheina.public.tags
-					{','.join(query)}
+					SET {','.join(query)}
 					WHERE tags.tag = %s
 					""",
 					params + [tag],
