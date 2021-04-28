@@ -117,6 +117,9 @@ class Tagger(SqlInterface, Hashable) :
 			except NotNullViolation :
 				raise BadRequest('The tag class you entered could not be found or does not exist.')
 
+			except UniqueViolation :
+				raise BadRequest('A tag with that name already exists.')
+
 			transaction.commit()
 
 
