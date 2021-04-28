@@ -1,6 +1,7 @@
 from kh_common.exceptions.http_error import BadRequest, Forbidden, NotFound, InternalServerError, HttpErrorHandler
 from kh_common.caching import ArgsCache, SimpleCache
 from typing import Dict, List, Optional, Tuple
+from psycopg2.errors import NotNullViolation
 from psycopg2.errors import UniqueViolation
 from kh_common.logging import getLogger
 from kh_common.sql import SqlInterface
@@ -104,13 +105,17 @@ class Tagger(SqlInterface, Hashable) :
 				query.append('SET owner = user_to_id(%s)')
 				params.append(owner)
 
-			transaction.query(f"""
-				UPDATE kheina.public.tags
-				{','.join(query)}
-				WHERE tags.tag = %s
-				""",
-				params + [tag],
-			)
+			try :
+				transaction.query(f"""
+					UPDATE kheina.public.tags
+					{','.join(query)}
+					WHERE tags.tag = %s
+					""",
+					params + [tag],
+				)
+
+			except NotNullViolation :
+				raise BadRequest('The tag class you entered could not be found or does not exist.')
 
 			transaction.commit()
 
