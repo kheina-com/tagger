@@ -90,7 +90,7 @@ class Tagger(SqlInterface, Hashable) :
 
 			current_owner = data[0] if data else None
 
-			if user.user_id != current_owner and Scope.mod not in req.user.scope :
+			if user.user_id != current_owner and Scope.mod not in user.scope :
 				raise Forbidden('You must be the tag owner or a mod to edit a tag.')
 
 			if tag_class :
