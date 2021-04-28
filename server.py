@@ -57,7 +57,6 @@ async def v1UpdateTag(req: Request, body: UpdateRequest) :
 		body.name,
 		body.tag_class,
 		body.owner,
-		Scope.mod in req.user.scope,
 	)
 	return NoContentResponse
 
