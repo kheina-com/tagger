@@ -99,7 +99,7 @@ class Tagger(SqlInterface, Hashable) :
 
 			if name :
 				query.append('tag = %s')
-				params.append(name)
+				params.append(name.lower())
 
 			if owner :
 				query.append('owner = user_to_id(%s)')
