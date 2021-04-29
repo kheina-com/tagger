@@ -131,7 +131,7 @@ class Tagger(SqlInterface, Hashable) :
 				'tag': tag,
 				**load,
 			}
-			for tag, load in self._pullAllTags().items() if load['owner'] == handle
+			for tag, load in self._pullAllTags().items() if load['owner'] and load['owner']['handle'] == handle
 		]
 
 		if not data :
