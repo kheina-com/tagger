@@ -79,7 +79,7 @@ class Tagger(SqlInterface, Hashable) :
 		query = []
 		params = []
 
-		if not any([name, tag_class, owner]) :
+		if not any([name, tag_class, owner, description]) :
 			raise BadRequest('no params were provided.')
 
 		with self.transaction() as transaction :
