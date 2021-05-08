@@ -29,6 +29,11 @@ class Tagger(SqlInterface, Hashable) :
 			raise Forbidden('You must be the tag owner or a mod to edit a tag.')
 
 
+	def _validateDescription(self, description: str) :
+		if len(description) > 1000 :
+			raise BadRequest('the given description is invalid, description cannot be over 1,000 characters in length.', logdata={ 'description': description })
+
+
 	@ArgsCache(60)
 	@HttpErrorHandler('adding tags to post')
 	def addTags(self, user_id: int, post_id: str, tags: Tuple[str]) :
@@ -70,7 +75,7 @@ class Tagger(SqlInterface, Hashable) :
 
 	@ArgsCache(60)
 	@HttpErrorHandler('updating a tag')
-	def updateTag(self, user: KhUser, tag: str, name:str=None, tag_class:str=None, owner:str=None) :
+	def updateTag(self, user: KhUser, tag: str, name: str, tag_class: str, owner: str, description: str) :
 		query = []
 		params = []
 
@@ -104,6 +109,11 @@ class Tagger(SqlInterface, Hashable) :
 			if owner :
 				query.append('owner = user_to_id(%s)')
 				params.append(owner)
+
+			if description :
+				self._validateDescription(description)
+				query.append('description = %s')
+				params.append(description)
 
 			try :
 				transaction.query(f"""
@@ -175,7 +185,15 @@ class Tagger(SqlInterface, Hashable) :
 	@SimpleCache(60)
 	def _pullAllTags(self) :
 		data = self.query("""
-			SELECT tag_classes.class, tags.tag, tags.deprecated, array_agg(t2.tag), users.handle, users.display_name, users.icon
+			SELECT
+				tag_classes.class,
+				tags.tag,
+				tags.deprecated,
+				array_agg(t2.tag),
+				users.handle,
+				users.display_name,
+				users.icon,
+				tags.description
 			FROM tags
 				INNER JOIN tag_classes
 					ON tag_classes.class_id = tags.class_id
@@ -200,7 +218,7 @@ class Tagger(SqlInterface, Hashable) :
 					'name': row[5],
 					'icon': row[6],
 				} if row[4] else None,
-				'description': None,
+				'description': row[7],
 			}
 			for row in data
 		}

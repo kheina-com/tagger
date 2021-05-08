@@ -57,6 +57,7 @@ async def v1UpdateTag(req: Request, body: UpdateRequest) :
 		body.name,
 		body.tag_class,
 		body.owner,
+		body.description,
 	)
 	return NoContentResponse
 

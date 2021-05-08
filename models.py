@@ -27,3 +27,4 @@ class UpdateRequest(BaseModel) :
 	tag_class: Optional[str]
 	owner: Optional[str]
 	admin: Optional[bool]
+	description: Optional[str]
