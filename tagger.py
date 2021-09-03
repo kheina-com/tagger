@@ -306,7 +306,7 @@ class Tagger(SqlInterface, Hashable) :
 
 	@ArgsCache(60)
 	@HttpErrorHandler('fetching frequently used tags')
-	async def frequentlyUsed(self, user: KhUser) -> List[str] :
+	async def frequentlyUsed(self, user: KhUser) -> List[TagPortable] :
 		posts = await postService.userPosts(user)
 
 		tags = defaultdict(lambda : 0)
@@ -317,4 +317,4 @@ class Tagger(SqlInterface, Hashable) :
 			for tag in flatten(postTags) :
 				tags[tag] += 1
 
-		return list(map(lambda x : x[0], sorted(tags.items(), key=lambda x : x[1], reverse=True)))[:25]
+		return list(map(lambda x : TagPortable(x[0]), sorted(tags.items(), key=lambda x : x[1], reverse=True)))[:25]
