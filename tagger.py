@@ -180,8 +180,8 @@ class Tagger(SqlInterface, Hashable) :
 					ON tag_classes.class_id = tags.class_id
 			WHERE posts.post_id = %s
 				AND (
-					posts.privacy = privacy_to_id('public')
-					OR posts.privacy = privacy_to_id('unlisted')
+					posts.privacy_id = privacy_to_id('public')
+					OR posts.privacy_id = privacy_to_id('unlisted')
 				)
 			GROUP BY tag_classes.class_id;
 			""",
