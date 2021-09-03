@@ -13,12 +13,11 @@ class Posts(Hashable) :
 
 	async def userPosts(self, user: KhUser) -> List[Post] :
 		async with async_request(
-			'GET',
+			'POST',
 			f'{posts_host}/v1/fetch_my_posts',
 			timeout=ClientTimeout(Posts.Timeout),
-			headers={
-				'authorization': 'bearer ' + user.token.token_string,
-			},
+			headers={ 'authorization': 'bearer ' + user.token.token_string },
+			json={ 'sort': 'new' },
 		) as response :
 			data = await response.json()
 
