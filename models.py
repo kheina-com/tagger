@@ -49,4 +49,4 @@ class Tag(BaseModel) :
 	group: TagGroupPortable
 	deprecated: bool
 	inherited_tags: List[TagPortable]
-	description: str
+	description: Optional[str]
