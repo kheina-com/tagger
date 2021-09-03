@@ -1,4 +1,6 @@
-from kh_common.models.user import Privacy, Rating, Score, UserPortable
+from kh_common.models.user import UserPortable
+from kh_common.models.privacy import Privacy
+from kh_common.models.rating import Rating
 from typing import Dict, List, Optional
 from pydantic import BaseModel
 from datetime import datetime
@@ -51,6 +53,13 @@ class Tag(BaseModel) :
 	deprecated: bool
 	inherited_tags: List[TagPortable]
 	description: Optional[str]
+
+
+class Score(BaseModel) :
+	up: int
+	down: int
+	total: int
+	user_vote: Optional[int]
 
 
 class MediaType(BaseModel) :
