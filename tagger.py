@@ -1,10 +1,10 @@
 from kh_common.exceptions.http_error import BadRequest, Conflict, Forbidden, NotFound, InternalServerError, HttpErrorHandler
 from models import Tag, TagGroupPortable, TagGroups, TagPortable
+from kh_common.models.privacy import Privacy, UserPrivacy
 from kh_common.caching import ArgsCache, SimpleCache
 from kh_common.models.verified import Verified
 from kh_common.models.user import UserPortable
 from typing import Dict, List, Optional, Tuple
-from kh_common.models.privacy import Privacy
 from psycopg2.errors import NotNullViolation
 from psycopg2.errors import UniqueViolation
 from kh_common.models.auth import KhUser
@@ -255,7 +255,7 @@ class Tagger(SqlInterface, Hashable) :
 					name = row[5],
 					handle = row[4],
 					icon = row[6],
-					privacy = self._get_privacy_map()[row[8]],
+					privacy = UserPrivacy[self._get_privacy_map()[row[8]].value],
 					verified = Verified.admin if row[10] else (
 						Verified.mod if row[9] else (
 							Verified.artist if row[11] else None
