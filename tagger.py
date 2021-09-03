@@ -8,10 +8,16 @@ from typing import Dict, List, Optional, Tuple
 from psycopg2.errors import NotNullViolation
 from psycopg2.errors import UniqueViolation
 from kh_common.models.auth import KhUser
+from kh_common.utilities import flatten
 from kh_common.sql import SqlInterface
 from kh_common.hashing import Hashable
+from collections import defaultdict
 from kh_common.auth import Scope
 from copy import deepcopy
+from posts import Posts
+
+
+postService = Posts()
 
 
 class Tagger(SqlInterface, Hashable) :
@@ -151,7 +157,7 @@ class Tagger(SqlInterface, Hashable) :
 	def fetchTagsByUser(self, handle: str) :
 		data = [
 			load
-			for tag, load in self._pullAllTags().items() if load.owner and load.owner.handle == handle
+			for _, load in self._pullAllTags().items() if load.owner and load.owner.handle == handle
 		]
 
 		if not data :
@@ -194,7 +200,7 @@ class Tagger(SqlInterface, Hashable) :
 
 
 	@HttpErrorHandler('fetching tags by post')
-	async def fetchTagsByPost(self, user: KhUser, post_id: str) :
+	async def fetchTagsByPost(self, user: KhUser, post_id: str) -> TagGroups :
 		self._validatePostId(post_id)
 
 		data = self._fetchTagsByPost(post_id)
@@ -296,3 +302,19 @@ class Tagger(SqlInterface, Hashable) :
 			raise NotFound('the provided tag does not exist.', tag=tag)
 
 		return data[tag]
+
+
+	@ArgsCache(60)
+	@HttpErrorHandler('fetching frequently used tags')
+	async def frequentlyUsed(self, user: KhUser) -> List[str] :
+		posts = await postService.userPosts(user)
+
+		tags = defaultdict(lambda : 0)
+
+		for post in posts :
+			postTags = await self.fetchTagsByPost(user, post.post_id)
+
+			for tag in flatten(postTags) :
+				tags[tag] += 1
+
+		return list(map(lambda x : x[0], sorted(tags.items(), key=lambda x : x[1], reverse=True)))[:25]

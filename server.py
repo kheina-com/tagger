@@ -82,6 +82,12 @@ async def v1FetchUserTags(handle: str) :
 	return tagger.fetchTagsByUser(handle)
 
 
+@app.get('/v1/frequently_used')
+async def v1FrequentlyUsed(req: Request) :
+	await req.user.authenticated()
+	return await tagger.frequentlyUsed(req.user)
+
+
 if __name__ == '__main__' :
 	from uvicorn.main import run
 	run(app, host='0.0.0.0', port=5002)
