@@ -63,9 +63,9 @@ async def v1UpdateTag(req: Request, body: UpdateRequest) :
 
 
 @app.get('/v1/fetch_tags/{post_id}')
-async def v1FetchTags(post_id: str) :
+async def v1FetchTags(req: Request, post_id: str) :
 	return UJSONResponse(
-		tagger.fetchTagsByPost(post_id),
+		await tagger.fetchTagsByPost(req.user, post_id),
 	)
 
 

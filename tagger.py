@@ -1,10 +1,10 @@
 from kh_common.exceptions.http_error import BadRequest, Conflict, Forbidden, NotFound, InternalServerError, HttpErrorHandler
 from models import Tag, TagGroupPortable, TagGroups, TagPortable
 from kh_common.caching import ArgsCache, SimpleCache
-from kh_common.models.privacy import UserPrivacy
 from kh_common.models.verified import Verified
 from kh_common.models.user import UserPortable
 from typing import Dict, List, Optional, Tuple
+from kh_common.models.privacy import Privacy
 from psycopg2.errors import NotNullViolation
 from psycopg2.errors import UniqueViolation
 from kh_common.models.auth import KhUser
@@ -44,7 +44,7 @@ class Tagger(SqlInterface, Hashable) :
 			""",
 			fetch_all=True,
 		)
-		return { x[0]: UserPrivacy[x[1]] for x in data if x[1] in UserPrivacy.__members__ }
+		return { x[0]: Privacy[x[1]] for x in data if x[1] in Privacy.__members__ }
 
 
 	@ArgsCache(60)
@@ -164,12 +164,9 @@ class Tagger(SqlInterface, Hashable) :
 
 
 	@ArgsCache(5)
-	@HttpErrorHandler('fetching tags by post')
-	def fetchTagsByPost(self, post_id: str) :
-		self._validatePostId(post_id)
-
+	def _fetchTagsByPost(self, post_id: str) :
 		data = self.query("""
-			SELECT tag_classes.class, array_agg(tags.tag)
+			SELECT tag_classes.class, array_agg(tags.tag), posts.privacy_id, posts.uploader
 			FROM kheina.public.posts
 				LEFT JOIN kheina.public.tag_post
 					ON tag_post.post_id = posts.post_id
@@ -179,24 +176,43 @@ class Tagger(SqlInterface, Hashable) :
 				LEFT JOIN kheina.public.tag_classes
 					ON tag_classes.class_id = tags.class_id
 			WHERE posts.post_id = %s
-				AND (
-					posts.privacy_id = privacy_to_id('public')
-					OR posts.privacy_id = privacy_to_id('unlisted')
-				)
 			GROUP BY tag_classes.class_id;
 			""",
 			(post_id,),
 			fetch_all=True,
 		)
 
-		if data :
-			return TagGroups({
+		if not data :
+			raise NotFound("the provided post does not exist or you don't have access to it.", post_id=post_id)
+
+		return {
+			'tags': TagGroups({
 				TagGroupPortable(i[0]): sorted(map(TagPortable, filter(None, i[1])))
 				for i in data
 				if i[0]
-			})
+			}),
+			'privacy': self._get_privacy_map()[data[0][2]],
+			'user_id': data[0][3],
+		}
 
-		raise NotFound("the provided post does not exist or you don't have access to it.", logdata={ 'post_id': post_id })
+
+	@HttpErrorHandler('fetching tags by post')
+	async def fetchTagsByPost(self, user: KhUser, post_id: str) :
+		self._validatePostId(post_id)
+
+		data = self._fetchTagsByPost(post_id)
+
+		if (
+			data['privacy'] not in { Privacy.public, Privacy.unlisted }
+			and (
+				data['user_id'] != user.user_id
+				or not await user.authenticated(raise_error=False)
+			)
+		) :
+			# the post was found and returned, but the user shouldn't have access to it or isn't authenticated
+			raise NotFound("the provided post does not exist or you don't have access to it.", post_id=post_id)
+
+		return data['tags']
 
 
 	@SimpleCache(60)
