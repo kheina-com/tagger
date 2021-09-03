@@ -1,5 +1,5 @@
 from models import InheritRequest, LookupRequest, PostRequest, TagsRequest, UpdateRequest
-from kh_common.server import Request, ServerApp, UJSONResponse, NoContentResponse
+from kh_common.server import Request, ServerApp, NoContentResponse
 from kh_common.auth import Scope
 from tagger import Tagger
 
@@ -64,30 +64,22 @@ async def v1UpdateTag(req: Request, body: UpdateRequest) :
 
 @app.get('/v1/fetch_tags/{post_id}')
 async def v1FetchTags(req: Request, post_id: str) :
-	return UJSONResponse(
-		await tagger.fetchTagsByPost(req.user, post_id),
-	)
+	return await tagger.fetchTagsByPost(req.user, post_id),
 
 
 @app.post('/v1/lookup_tags')
 async def v1FetchTags(body: LookupRequest) :
-	return UJSONResponse(
-		tagger.tagLookup(body.tag),
-	)
+	return tagger.tagLookup(body.tag),
 
 
 @app.get('/v1/tag/{tag}')
 async def v1FetchTag(tag: str) :
-	return UJSONResponse(
-		tagger.fetchTag(tag),
-	)
+	return tagger.fetchTag(tag),
 
 
 @app.get('/v1/get_user_tags/{handle}')
 async def v1FetchUserTags(handle: str) :
-	return UJSONResponse(
-		tagger.fetchTagsByUser(handle),
-	)
+	return tagger.fetchTagsByUser(handle),
 
 
 if __name__ == '__main__' :
