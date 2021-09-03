@@ -176,7 +176,7 @@ class Tagger(SqlInterface, Hashable) :
 				LEFT JOIN kheina.public.tag_classes
 					ON tag_classes.class_id = tags.class_id
 			WHERE posts.post_id = %s
-			GROUP BY tag_classes.class_id;
+			GROUP BY tag_classes.class_id, posts.privacy_id, posts.uploader;
 			""",
 			(post_id,),
 			fetch_all=True,
