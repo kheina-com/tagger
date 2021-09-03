@@ -1,15 +1,17 @@
-from kh_common.exceptions.http_error import BadRequest, Forbidden, NotFound, InternalServerError, HttpErrorHandler
+from kh_common.exceptions.http_error import BadRequest, Conflict, Forbidden, NotFound, InternalServerError, HttpErrorHandler
+from models import Tag, TagGroupPortable, TagGroups, TagPortable
 from kh_common.caching import ArgsCache, SimpleCache
+from kh_common.models.privacy import UserPrivacy
+from kh_common.models.verified import Verified
+from kh_common.models.user import UserPortable
 from typing import Dict, List, Optional, Tuple
 from psycopg2.errors import NotNullViolation
 from psycopg2.errors import UniqueViolation
-from kh_common.logging import getLogger
+from kh_common.models.auth import KhUser
 from kh_common.sql import SqlInterface
 from kh_common.hashing import Hashable
-from kh_common.models import KhUser
 from kh_common.auth import Scope
 from copy import deepcopy
-from uuid import uuid4
 
 
 class Tagger(SqlInterface, Hashable) :
@@ -32,6 +34,17 @@ class Tagger(SqlInterface, Hashable) :
 	def _validateDescription(self, description: str) :
 		if len(description) > 1000 :
 			raise BadRequest('the given description is invalid, description cannot be over 1,000 characters in length.', logdata={ 'description': description })
+
+
+	@SimpleCache(600)
+	def _get_privacy_map(self) :
+		data = self.query("""
+			SELECT privacy_id, type
+			FROM kheina.public.privacy;
+			""",
+			fetch_all=True,
+		)
+		return { x[0]: UserPrivacy[x[1]] for x in data if x[1] in UserPrivacy.__members__ }
 
 
 	@ArgsCache(60)
@@ -68,7 +81,7 @@ class Tagger(SqlInterface, Hashable) :
 		data = self.query("""
 			CALL kheina.public.inherit_tag(%s, %s, %s, %s);
 			""",
-			(user_id, parent_tag, child_tag, deprecate),
+			(user_id, parent_tag, child_tag.lower(), deprecate),
 			commit=True,
 		)
 
@@ -128,7 +141,7 @@ class Tagger(SqlInterface, Hashable) :
 				raise BadRequest('The tag class you entered could not be found or does not exist.')
 
 			except UniqueViolation :
-				raise BadRequest('A tag with that name already exists.')
+				raise Conflict('A tag with that name already exists.')
 
 			transaction.commit()
 
@@ -137,10 +150,10 @@ class Tagger(SqlInterface, Hashable) :
 	@HttpErrorHandler('fetching user-owned tags')
 	def fetchTagsByUser(self, handle: str) :
 		data = [
-			{
-				'tag': tag,
+			Tag(
+				tag = tag,
 				**load,
-			}
+			)
 			for tag, load in self._pullAllTags().items() if load['owner'] and load['owner']['handle'] == handle
 		]
 
@@ -150,7 +163,7 @@ class Tagger(SqlInterface, Hashable) :
 		return data
 
 
-	@ArgsCache(60)
+	@ArgsCache(5)
 	@HttpErrorHandler('fetching tags by post')
 	def fetchTagsByPost(self, post_id: str) :
 		self._validatePostId(post_id)
@@ -166,6 +179,10 @@ class Tagger(SqlInterface, Hashable) :
 				LEFT JOIN kheina.public.tag_classes
 					ON tag_classes.class_id = tags.class_id
 			WHERE posts.post_id = %s
+				AND (
+					posts.privacy = privacy_to_id('public')
+					OR posts.privacy = privacy_to_id('unlisted')
+				)
 			GROUP BY tag_classes.class_id;
 			""",
 			(post_id,),
@@ -173,11 +190,11 @@ class Tagger(SqlInterface, Hashable) :
 		)
 
 		if data :
-			return {
-				i[0]: sorted(filter(None, i[1]))
+			return TagGroups({
+				TagGroupPortable(i[0]): sorted(map(TagPortable, filter(None, i[1])))
 				for i in data
 				if i[0]
-			}
+			})
 
 		raise NotFound("the provided post does not exist or you don't have access to it.", logdata={ 'post_id': post_id })
 
@@ -193,7 +210,11 @@ class Tagger(SqlInterface, Hashable) :
 				users.handle,
 				users.display_name,
 				users.icon,
-				tags.description
+				tags.description,
+				users.privacy_id,
+				users.mod,
+				users.admin,
+				users.verified
 			FROM tags
 				INNER JOIN tag_classes
 					ON tag_classes.class_id = tags.class_id
@@ -209,23 +230,30 @@ class Tagger(SqlInterface, Hashable) :
 		)
 
 		return {
-			row[1]: {
-				'class': row[0],
-				'deprecated': row[2],
-				'inherited_tags': list(filter(None, row[3])),
-				'owner': {
-					'handle': row[4],
-					'name': row[5],
-					'icon': row[6],
-				} if row[4] else None,
-				'description': row[7],
-			}
+			row[1]: Tag(
+				tag = row[1],
+				group = TagGroupPortable(row[0]),
+				deprecated = row[2],
+				inherited_tags = list(map(TagPortable, filter(None, row[3]))),
+				owner = UserPortable(
+					name = row[5],
+					handle = row[4],
+					icon = row[6],
+					privacy = self._get_privacy_map()[row[8]],
+					verified = Verified.admin if row[10] else (
+						Verified.mod if row[9] else (
+							Verified.artist if row[11] else None
+						)
+					)
+				) if row[4] else None,
+				description = row[7],
+			)
 			for row in data
 		}
 
 
 	@HttpErrorHandler('looking up tags')
-	def tagLookup(self, tag:Optional[str]=None) :
+	def tagLookup(self, tag: Optional[str] = None) :
 		t = tag or ''
 
 		data = self._pullAllTags()

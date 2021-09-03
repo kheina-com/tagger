@@ -1,4 +1,5 @@
-from typing import List, Optional
+from kh_common.models.user import UserPortable
+from typing import Dict, List, Optional
 from pydantic import BaseModel
 
 
@@ -28,3 +29,24 @@ class UpdateRequest(BaseModel) :
 	owner: Optional[str]
 	admin: Optional[bool]
 	description: Optional[str]
+
+
+class TagGroupPortable(str) :
+	pass
+
+
+class TagPortable(str) :
+	pass
+
+
+class TagGroups(Dict[TagGroupPortable, List[TagPortable]]) :
+	pass
+
+
+class Tag(BaseModel) :
+	tag: str
+	owner: Optional[UserPortable]
+	group: TagGroupPortable
+	deprecated: bool
+	inherited_tags: List[TagPortable]
+	description: str

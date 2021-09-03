@@ -15,7 +15,7 @@ async def shutdown() :
 
 @app.post('/v1/add_tags')
 async def v1AddTags(req: Request, body: TagsRequest) :
-	req.user.authenticated()
+	await req.user.authenticated()
 	tagger.addTags(
 		req.user.user_id,
 		body.post_id,
@@ -26,7 +26,7 @@ async def v1AddTags(req: Request, body: TagsRequest) :
 
 @app.post('/v1/remove_tags')
 async def v1RemoveTags(req: Request, body: TagsRequest) :
-	req.user.authenticated()
+	await req.user.authenticated()
 	tagger.removeTags(
 		req.user.user_id,
 		body.post_id,
@@ -37,7 +37,7 @@ async def v1RemoveTags(req: Request, body: TagsRequest) :
 
 @app.post('/v1/inherit_tag')
 async def v1InheritTag(req: Request, body: InheritRequest) :
-	req.user.authenticated()
+	await req.user.authenticated()
 	tagger.inheritTag(
 		req.user.user_id,
 		body.parent_tag,
@@ -50,7 +50,7 @@ async def v1InheritTag(req: Request, body: InheritRequest) :
 
 @app.post('/v1/update_tag')
 async def v1UpdateTag(req: Request, body: UpdateRequest) :
-	req.user.authenticated()
+	await req.user.authenticated()
 	tagger.updateTag(
 		req.user,
 		body.tag,
