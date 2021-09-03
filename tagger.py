@@ -23,7 +23,7 @@ class Tagger(SqlInterface, Hashable) :
 
 	def _validatePostId(self, post_id: str) :
 		if len(post_id) != 8 :
-			raise BadRequest('the given post id is invalid.', logdata={ 'post_id': post_id })
+			raise BadRequest('the given post id is invalid.', post_id=post_id)
 
 
 	def _validateAdmin(self, admin: bool) :
@@ -33,7 +33,7 @@ class Tagger(SqlInterface, Hashable) :
 
 	def _validateDescription(self, description: str) :
 		if len(description) > 1000 :
-			raise BadRequest('the given description is invalid, description cannot be over 1,000 characters in length.', logdata={ 'description': description })
+			raise BadRequest('the given description is invalid, description cannot be over 1,000 characters in length.', description=description)
 
 
 	@SimpleCache(600)
@@ -150,15 +150,12 @@ class Tagger(SqlInterface, Hashable) :
 	@HttpErrorHandler('fetching user-owned tags')
 	def fetchTagsByUser(self, handle: str) :
 		data = [
-			Tag(
-				tag = tag,
-				**load,
-			)
-			for tag, load in self._pullAllTags().items() if load['owner'] and load['owner']['handle'] == handle
+			load
+			for tag, load in self._pullAllTags().items() if load.owner and load.owner.handle == handle
 		]
 
 		if not data :
-			raise NotFound('the provided user does not exist or the user does not own any tags.', logdata={ 'handle': handle })
+			raise NotFound('the provided user does not exist or the user does not own any tags.', handle=handle)
 
 		return data
 
@@ -277,10 +274,10 @@ class Tagger(SqlInterface, Hashable) :
 
 		for tag, load in deepcopy(data).items() :
 
-			if not t.startswith(t) :
+			if not tag.startswith(t) :
 				continue
 
-			tag_class = load.pop('class')
+			tag_class = load.group
 
 			if tag_class in tags :
 				tags[tag_class][tag] = load
@@ -296,9 +293,6 @@ class Tagger(SqlInterface, Hashable) :
 		data = self._pullAllTags()
 
 		if tag not in data :
-			raise NotFound('the provided tag does not exist.', logdata={ 'tag': tag })
+			raise NotFound('the provided tag does not exist.', tag=tag)
 
-		return {
-			'tag': tag,
-			**data[tag],
-		}
+		return data[tag]
