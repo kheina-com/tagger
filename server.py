@@ -86,7 +86,7 @@ async def v1FetchUserTags(req: Request, handle: str) :
 @app.get('/v1/frequently_used', responses={ 200: { 'model': List[TagPortable] } })
 async def v1FrequentlyUsed(req: Request) :
 	await req.user.authenticated()
-	return await tagger.frequentlyUsed(req.headers)
+	return await tagger.frequentlyUsed(req.user)
 
 
 if __name__ == '__main__' :

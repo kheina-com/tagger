@@ -303,8 +303,8 @@ class Tagger(SqlInterface, Hashable) :
 
 	@ArgsCache(60)
 	@HttpErrorHandler('fetching frequently used tags')
-	async def frequentlyUsed(self, headers: Dict[str, str]) -> List[TagPortable] :
-		posts = await PostsService(PostsBody, headers=headers)
+	async def frequentlyUsed(self, user: KhUser) -> List[TagPortable] :
+		posts = await PostsService(PostsBody, auth=user.token.token_string)
 
 		tags = defaultdict(lambda : 0)
 
