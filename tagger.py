@@ -1,16 +1,17 @@
-from kh_common.exceptions.http_error import BadRequest, Conflict, Forbidden, NotFound, InternalServerError, HttpErrorHandler
+from kh_common.exceptions.http_error import BadRequest, Conflict, Forbidden, NotFound, HttpErrorHandler
 from models import Tag, TagGroupPortable, TagGroups, TagPortable
-from kh_common.models.privacy import Privacy, UserPrivacy
 from kh_common.caching import ArgsCache, SimpleCache
-from kh_common.models.verified import Verified
-from kh_common.models.user import UserPortable
+from kh_common.config.constants import users_host
 from typing import Dict, List, Optional, Tuple
+from kh_common.models.privacy import Privacy
 from psycopg2.errors import NotNullViolation
 from psycopg2.errors import UniqueViolation
 from kh_common.models.auth import KhUser
 from kh_common.utilities import flatten
 from kh_common.sql import SqlInterface
+from kh_common.models.user import User
 from kh_common.hashing import Hashable
+from kh_common.gateway import Gateway
 from collections import defaultdict
 from kh_common.auth import Scope
 from copy import deepcopy
@@ -18,6 +19,7 @@ from posts import Posts
 
 
 postService = Posts()
+UsersService = Gateway(users_host + '/v1/fetch_user/{handle}', User)
 
 
 class Tagger(SqlInterface, Hashable) :
@@ -156,8 +158,11 @@ class Tagger(SqlInterface, Hashable) :
 	@HttpErrorHandler('fetching user-owned tags')
 	def fetchTagsByUser(self, handle: str) :
 		data = [
-			load
-			for _, load in self._pullAllTags().items() if load.owner and load.owner.handle == handle
+			Tag(
+				**load,
+				owner = UsersService.fetch(handle=load['owner'])
+			)
+			for _, load in self._pullAllTags().items() if load['owner'] == handle
 		]
 
 		if not data :
@@ -227,13 +232,7 @@ class Tagger(SqlInterface, Hashable) :
 				tags.deprecated,
 				array_agg(t2.tag),
 				users.handle,
-				users.display_name,
-				users.icon,
 				tags.description,
-				users.privacy_id,
-				users.mod,
-				users.admin,
-				users.verified
 			FROM tags
 				INNER JOIN tag_classes
 					ON tag_classes.class_id = tags.class_id
@@ -249,24 +248,14 @@ class Tagger(SqlInterface, Hashable) :
 		)
 
 		return {
-			row[1]: Tag(
-				tag = row[1],
-				group = TagGroupPortable(row[0]),
-				deprecated = row[2],
-				inherited_tags = list(map(TagPortable, filter(None, row[3]))),
-				owner = UserPortable(
-					name = row[5],
-					handle = row[4],
-					icon = row[6],
-					privacy = UserPrivacy[self._get_privacy_map()[row[8]].value],
-					verified = Verified.admin if row[10] else (
-						Verified.mod if row[9] else (
-							Verified.artist if row[11] else None
-						)
-					)
-				) if row[4] else None,
-				description = row[7],
-			)
+			row[1]: {
+				'tag': row[1],
+				'group': TagGroupPortable(row[0]),
+				'deprecated': row[2],
+				'inherited_tags': list(map(TagPortable, filter(None, row[3]))),
+				'owner': row[4],
+				'description': row[5],
+			}
 			for row in data
 		}
 
@@ -301,7 +290,10 @@ class Tagger(SqlInterface, Hashable) :
 		if tag not in data :
 			raise NotFound('the provided tag does not exist.', tag=tag)
 
-		return data[tag]
+		return Tag(
+			**data[tag],
+			owner = UsersService.fetch(handle=data[tag]['owner'])
+		)
 
 
 	@ArgsCache(60)
