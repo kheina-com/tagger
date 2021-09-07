@@ -1,7 +1,7 @@
 from kh_common.exceptions.http_error import BadRequest, Conflict, Forbidden, NotFound, HttpErrorHandler
-from models import Tag, TagGroupPortable, TagGroups, TagPortable
+from models import Post, Tag, TagGroupPortable, TagGroups, TagPortable
+from kh_common.config.constants import posts_host, users_host
 from kh_common.caching import ArgsCache, SimpleCache
-from kh_common.config.constants import users_host
 from kh_common.models.user import UserPortable
 from typing import Dict, List, Optional, Tuple
 from kh_common.models.privacy import Privacy
@@ -15,11 +15,10 @@ from kh_common.gateway import Gateway
 from collections import defaultdict
 from kh_common.auth import Scope
 from copy import deepcopy
-from posts import Posts
 
 
-postService = Posts()
 UsersService = Gateway(users_host + '/v1/fetch_user/{handle}', UserPortable)
+PostsService = Gateway(posts_host + '/v1/fetch_my_posts', List[Post])
 
 
 class Tagger(SqlInterface, Hashable) :
@@ -305,7 +304,7 @@ class Tagger(SqlInterface, Hashable) :
 	@ArgsCache(60)
 	@HttpErrorHandler('fetching frequently used tags')
 	async def frequentlyUsed(self, user: KhUser) -> List[TagPortable] :
-		posts = await postService.userPosts(user)
+		posts = await PostsService({ 'sort': 'new' }, auth=user.token.token_string)
 
 		tags = defaultdict(lambda : 0)
 
