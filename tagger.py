@@ -19,7 +19,7 @@ from copy import deepcopy
 
 UsersService = Gateway(users_host + '/v1/fetch_user/{handle}', UserPortable)
 PostsService = Gateway(posts_host + '/v1/fetch_my_posts', List[Post])
-
+PostsBody = { 'sort': 'new', 'count': 64, 'page': 1 }
 
 class Tagger(SqlInterface, Hashable) :
 
@@ -304,7 +304,7 @@ class Tagger(SqlInterface, Hashable) :
 	@ArgsCache(60)
 	@HttpErrorHandler('fetching frequently used tags')
 	async def frequentlyUsed(self, user: KhUser) -> List[TagPortable] :
-		posts = await PostsService({ 'sort': 'new' }, auth=user.token.token_string)
+		posts = await PostsService(PostsBody, auth=user.token.token_string)
 
 		tags = defaultdict(lambda : 0)
 
