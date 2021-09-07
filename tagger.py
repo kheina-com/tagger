@@ -160,9 +160,9 @@ class Tagger(SqlInterface, Hashable) :
 		data = [
 			Tag(
 				**load,
-				owner = await UsersService.fetch(handle=load['owner'])
+				owner = await UsersService.fetch(handle=load['handle'])
 			)
-			for _, load in self._pullAllTags().items() if load['owner'] == handle
+			for _, load in self._pullAllTags().items() if load['handle'] == handle
 		]
 
 		if not data :
@@ -253,7 +253,7 @@ class Tagger(SqlInterface, Hashable) :
 				'group': TagGroupPortable(row[0]),
 				'deprecated': row[2],
 				'inherited_tags': list(map(TagPortable, filter(None, row[3]))),
-				'owner': row[4],
+				'handle': row[4],
 				'description': row[5],
 			}
 			for row in data
@@ -292,7 +292,7 @@ class Tagger(SqlInterface, Hashable) :
 
 		return Tag(
 			**data[tag],
-			owner = await UsersService.fetch(handle=data[tag]['owner'])
+			owner = await UsersService.fetch(handle=data[tag]['handle'])
 		)
 
 
