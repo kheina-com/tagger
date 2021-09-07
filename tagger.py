@@ -18,7 +18,7 @@ from copy import deepcopy
 
 
 UsersService = Gateway(users_host + '/v1/fetch_user/{handle}', UserPortable)
-PostsService = Gateway(posts_host + '/v1/fetch_my_posts', List[Post])
+PostsService = Gateway(posts_host + '/v1/fetch_my_posts', List[Post], method='POST')
 PostsBody = { 'sort': 'new', 'count': 64, 'page': 1 }
 
 class Tagger(SqlInterface, Hashable) :
