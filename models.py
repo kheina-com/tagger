@@ -4,6 +4,7 @@ from kh_common.models.rating import Rating
 from typing import Dict, List, Optional
 from pydantic import BaseModel
 from datetime import datetime
+from enum import Enum, unique
 
 
 class LookupRequest(BaseModel) :
@@ -34,8 +35,14 @@ class UpdateRequest(BaseModel) :
 	description: Optional[str]
 
 
-class TagGroupPortable(str) :
-	pass
+@unique
+class TagGroupPortable(Enum) :
+	artist: str = 'artist'
+	subject: str = 'subject'
+	sponsor: str = 'sponsor'
+	species: str = 'species'
+	gender: str = 'gender'
+	misc: str = 'misc'
 
 
 class TagPortable(str) :
