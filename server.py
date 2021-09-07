@@ -74,12 +74,12 @@ async def v1FetchTags(body: LookupRequest) :
 
 @app.get('/v1/tag/{tag}')
 async def v1FetchTag(tag: str) :
-	return tagger.fetchTag(tag)
+	return await tagger.fetchTag(tag)
 
 
 @app.get('/v1/get_user_tags/{handle}')
 async def v1FetchUserTags(handle: str) :
-	return tagger.fetchTagsByUser(handle)
+	return await tagger.fetchTagsByUser(handle)
 
 
 @app.get('/v1/frequently_used')

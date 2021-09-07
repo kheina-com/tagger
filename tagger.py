@@ -156,11 +156,11 @@ class Tagger(SqlInterface, Hashable) :
 
 	@ArgsCache(60)
 	@HttpErrorHandler('fetching user-owned tags')
-	def fetchTagsByUser(self, handle: str) :
+	async def fetchTagsByUser(self, handle: str) :
 		data = [
 			Tag(
 				**load,
-				owner = UsersService.fetch(handle=load['owner'])
+				owner = await UsersService.fetch(handle=load['owner'])
 			)
 			for _, load in self._pullAllTags().items() if load['owner'] == handle
 		]
@@ -284,7 +284,7 @@ class Tagger(SqlInterface, Hashable) :
 
 
 	@HttpErrorHandler('fetching tag')
-	def fetchTag(self, tag: str) :
+	async def fetchTag(self, tag: str) :
 		data = self._pullAllTags()
 
 		if tag not in data :
@@ -292,7 +292,7 @@ class Tagger(SqlInterface, Hashable) :
 
 		return Tag(
 			**data[tag],
-			owner = UsersService.fetch(handle=data[tag]['owner'])
+			owner = await UsersService.fetch(handle=data[tag]['owner'])
 		)
 
 
