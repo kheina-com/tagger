@@ -68,18 +68,18 @@ async def v1FetchTags(req: Request, post_id: str) :
 
 
 @app.post('/v1/lookup_tags')
-async def v1FetchTags(body: LookupRequest) :
+async def v1LookUpTags(body: LookupRequest) :
 	return tagger.tagLookup(body.tag)
 
 
 @app.get('/v1/tag/{tag}')
-async def v1FetchTag(tag: str) :
-	return await tagger.fetchTag(tag)
+async def v1FetchTag(req: Request, tag: str) :
+	return await tagger.fetchTag(req.user, tag)
 
 
 @app.get('/v1/get_user_tags/{handle}')
-async def v1FetchUserTags(handle: str) :
-	return await tagger.fetchTagsByUser(handle)
+async def v1FetchUserTags(req: Request, handle: str) :
+	return await tagger.fetchTagsByUser(req.user, handle)
 
 
 @app.get('/v1/frequently_used')
