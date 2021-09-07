@@ -232,7 +232,7 @@ class Tagger(SqlInterface, Hashable) :
 				tags.deprecated,
 				array_agg(t2.tag),
 				users.handle,
-				tags.description,
+				tags.description
 			FROM tags
 				INNER JOIN tag_classes
 					ON tag_classes.class_id = tags.class_id
