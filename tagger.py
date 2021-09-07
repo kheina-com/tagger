@@ -2,6 +2,7 @@ from kh_common.exceptions.http_error import BadRequest, Conflict, Forbidden, Not
 from models import Tag, TagGroupPortable, TagGroups, TagPortable
 from kh_common.caching import ArgsCache, SimpleCache
 from kh_common.config.constants import users_host
+from kh_common.models.user import UserPortable
 from typing import Dict, List, Optional, Tuple
 from kh_common.models.privacy import Privacy
 from psycopg2.errors import NotNullViolation
@@ -9,7 +10,6 @@ from psycopg2.errors import UniqueViolation
 from kh_common.models.auth import KhUser
 from kh_common.utilities import flatten
 from kh_common.sql import SqlInterface
-from kh_common.models.user import User
 from kh_common.hashing import Hashable
 from kh_common.gateway import Gateway
 from collections import defaultdict
@@ -19,7 +19,7 @@ from posts import Posts
 
 
 postService = Posts()
-UsersService = Gateway(users_host + '/v1/fetch_user/{handle}', User)
+UsersService = Gateway(users_host + '/v1/fetch_user/{handle}', UserPortable)
 
 
 class Tagger(SqlInterface, Hashable) :
@@ -160,7 +160,7 @@ class Tagger(SqlInterface, Hashable) :
 		data = [
 			Tag(
 				**load,
-				owner = await UsersService.fetch(
+				owner = await UsersService(
 					handle=load['handle'],
 					auth=user.token.token_string,
 				),
@@ -295,7 +295,7 @@ class Tagger(SqlInterface, Hashable) :
 
 		return Tag(
 			**data[tag],
-			owner = await UsersService.fetch(
+			owner = await UsersService(
 				handle=data[tag]['handle'],
 				auth=user.token.token_string,
 			),

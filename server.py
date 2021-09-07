@@ -1,7 +1,8 @@
-from models import InheritRequest, LookupRequest, PostRequest, TagsRequest, UpdateRequest
+from models import InheritRequest, LookupRequest, Tag, TagGroups, TagPortable, TagsRequest, UpdateRequest
 from kh_common.server import Request, ServerApp, NoContentResponse
 from kh_common.auth import Scope
 from tagger import Tagger
+from typing import List
 
 
 app = ServerApp(auth_required=False)
@@ -13,7 +14,7 @@ async def shutdown() :
 	tagger.close()
 
 
-@app.post('/v1/add_tags')
+@app.post('/v1/add_tags', responses={ 204: { 'model': None } }, status_code=204)
 async def v1AddTags(req: Request, body: TagsRequest) :
 	await req.user.authenticated()
 	tagger.addTags(
@@ -24,7 +25,7 @@ async def v1AddTags(req: Request, body: TagsRequest) :
 	return NoContentResponse
 
 
-@app.post('/v1/remove_tags')
+@app.post('/v1/remove_tags', responses={ 204: { 'model': None } }, status_code=204)
 async def v1RemoveTags(req: Request, body: TagsRequest) :
 	await req.user.authenticated()
 	tagger.removeTags(
@@ -35,7 +36,7 @@ async def v1RemoveTags(req: Request, body: TagsRequest) :
 	return NoContentResponse
 
 
-@app.post('/v1/inherit_tag')
+@app.post('/v1/inherit_tag', responses={ 204: { 'model': None } }, status_code=204)
 async def v1InheritTag(req: Request, body: InheritRequest) :
 	await req.user.authenticated()
 	tagger.inheritTag(
@@ -48,7 +49,7 @@ async def v1InheritTag(req: Request, body: InheritRequest) :
 	return NoContentResponse
 
 
-@app.post('/v1/update_tag')
+@app.post('/v1/update_tag', responses={ 204: { 'model': None } }, status_code=204)
 async def v1UpdateTag(req: Request, body: UpdateRequest) :
 	await req.user.authenticated()
 	tagger.updateTag(
@@ -62,7 +63,7 @@ async def v1UpdateTag(req: Request, body: UpdateRequest) :
 	return NoContentResponse
 
 
-@app.get('/v1/fetch_tags/{post_id}')
+@app.get('/v1/fetch_tags/{post_id}', responses={ 200: { 'model': TagGroups } })
 async def v1FetchTags(req: Request, post_id: str) :
 	return await tagger.fetchTagsByPost(req.user, post_id)
 
@@ -72,17 +73,17 @@ async def v1LookUpTags(body: LookupRequest) :
 	return tagger.tagLookup(body.tag)
 
 
-@app.get('/v1/tag/{tag}')
+@app.get('/v1/tag/{tag}', responses={ 200: { 'model': Tag } })
 async def v1FetchTag(req: Request, tag: str) :
 	return await tagger.fetchTag(req.user, tag)
 
 
-@app.get('/v1/get_user_tags/{handle}')
+@app.get('/v1/get_user_tags/{handle}', responses={ 200: { 'model': List[Tag] } })
 async def v1FetchUserTags(req: Request, handle: str) :
 	return await tagger.fetchTagsByUser(req.user, handle)
 
 
-@app.get('/v1/frequently_used')
+@app.get('/v1/frequently_used', responses={ 200: { 'model': List[TagPortable] } })
 async def v1FrequentlyUsed(req: Request) :
 	await req.user.authenticated()
 	return await tagger.frequentlyUsed(req.user)
