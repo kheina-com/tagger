@@ -161,7 +161,7 @@ class Tagger(SqlInterface, Hashable) :
 				**load,
 				owner = await UsersService(
 					handle=load['handle'],
-					auth=user.token.token_string,
+					auth=user.token.token_string if user.token else None,
 				),
 			)
 			for _, load in self._pullAllTags().items() if load['handle'] == handle
