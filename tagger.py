@@ -296,7 +296,7 @@ class Tagger(SqlInterface, Hashable) :
 			**data[tag],
 			owner = await UsersService(
 				handle=data[tag]['handle'],
-				auth=user.token.token_string,
+				auth=user.token.token_string if user.token else None,
 			) if data[tag]['handle'] else None,
 		)
 
