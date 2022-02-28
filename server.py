@@ -70,7 +70,7 @@ async def v1FetchTags(req: Request, post_id: str) :
 
 @app.post('/v1/lookup_tags')
 async def v1LookUpTags(req: Request, body: LookupRequest) :
-	return tagger.tagLookup(req.user, body.tag)
+	return await tagger.tagLookup(req.user, body.tag)
 
 
 @app.get('/v1/tag/{tag}', responses={ 200: { 'model': Tag } })
