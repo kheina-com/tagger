@@ -1,9 +1,10 @@
 from kh_common.exceptions.http_error import BadRequest, Conflict, Forbidden, NotFound, HttpErrorHandler
 from models import Post, Tag, TagGroupPortable, TagGroups, TagPortable
 from kh_common.config.constants import posts_host, users_host
+from typing import Dict, List, Optional, Tuple, Union
 from kh_common.caching import ArgsCache, SimpleCache
 from kh_common.models.user import UserPortable
-from typing import Dict, List, Optional, Tuple
+from asyncio import ensure_future, Task, wait
 from kh_common.models.privacy import Privacy
 from psycopg2.errors import NotNullViolation
 from psycopg2.errors import UniqueViolation
@@ -14,7 +15,6 @@ from kh_common.hashing import Hashable
 from kh_common.gateway import Gateway
 from collections import defaultdict
 from kh_common.auth import Scope
-from copy import deepcopy
 
 
 UsersService = Gateway(users_host + '/v1/fetch_user/{handle}', UserPortable)
@@ -251,7 +251,7 @@ class Tagger(SqlInterface, Hashable) :
 
 		return {
 			row[1]: {
-				'tag': row[1],
+				'tag': TagPortable(row[1]),
 				'group': TagGroupPortable(row[0]),
 				'deprecated': row[2],
 				'inherited_tags': list(map(TagPortable, filter(None, row[3]))),
@@ -262,27 +262,34 @@ class Tagger(SqlInterface, Hashable) :
 		}
 
 
+	async def _populate_tag_owner(self, user: KhUser, tag: Dict[str, Union[TagPortable, TagGroupPortable, bool, List[TagPortable], str]]) :
+		if tag['handle'] :
+			return Tag(
+				**tag,
+				owner = await UsersService(
+					handle=tag['handle'],
+					auth=user.token.token_string if user.token else None,
+				),
+			)
+		return Tag.parse_obj(tag)
+
+
 	@HttpErrorHandler('looking up tags')
-	def tagLookup(self, tag: Optional[str] = None) :
-		t = tag or ''
+	async def tagLookup(self, user: KhUser, tag: Optional[str] = None) :
+		t: str = tag or ''
 
-		data = self._pullAllTags()
-		tags = { }
+		tags: List[Tag] = []
 
-		for tag, load in deepcopy(data).items() :
+		for tag, load in self._pullAllTags().items() :
 
 			if not tag.startswith(t) :
 				continue
 
-			tag_class = load.group
+			tags.append(ensure_future(self._populate_tag_owner(user, load)))
 
-			if tag_class in tags :
-				tags[tag_class][tag] = load
+		await wait(tags)
 
-			else :
-				tags[tag_class] = { tag: load }
-
-		return tags
+		return list(map(Task.result, tags))
 
 
 	@HttpErrorHandler('fetching tag')
@@ -292,13 +299,7 @@ class Tagger(SqlInterface, Hashable) :
 		if tag not in data :
 			raise NotFound('the provided tag does not exist.', tag=tag)
 
-		return Tag(
-			**data[tag],
-			owner = await UsersService(
-				handle=data[tag]['handle'],
-				auth=user.token.token_string if user.token else None,
-			) if data[tag]['handle'] else None,
-		)
+		return await self._populate_tag_owner(user, data[tag])
 
 
 	@ArgsCache(60)
