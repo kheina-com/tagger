@@ -314,7 +314,7 @@ class Tagger(SqlInterface, Hashable) :
 		tags = defaultdict(lambda : defaultdict(lambda : 0))
 
 		for tag_set in post_tags :
-			for group, tag_list in await tag_set.items() :
+			for group, tag_list in (await tag_set).items() :
 				for tag in tag_list :
 					tags[group][tag] += 1
 
