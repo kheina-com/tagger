@@ -9,7 +9,6 @@ from kh_common.models.privacy import Privacy
 from psycopg2.errors import NotNullViolation
 from psycopg2.errors import UniqueViolation
 from kh_common.models.auth import KhUser
-from kh_common.utilities import flatten
 from kh_common.sql import SqlInterface
 from kh_common.hashing import Hashable
 from kh_common.gateway import Gateway
@@ -20,6 +19,8 @@ from kh_common.auth import Scope
 UsersService = Gateway(users_host + '/v1/fetch_user/{handle}', UserPortable)
 PostsService = Gateway(posts_host + '/v1/fetch_my_posts', List[Post], method='POST')
 PostsBody = { 'sort': 'new', 'count': 64, 'page': 1 }
+Misc: TagGroupPortable = TagGroupPortable('misc')
+
 
 class Tagger(SqlInterface, Hashable) :
 
@@ -304,15 +305,23 @@ class Tagger(SqlInterface, Hashable) :
 
 	@ArgsCache(60)
 	@HttpErrorHandler('fetching frequently used tags')
-	async def frequentlyUsed(self, user: KhUser) -> List[TagPortable] :
-		posts = await PostsService(PostsBody, auth=user.token.token_string)
+	async def frequentlyUsed(self, user: KhUser) -> TagGroups :
+		posts: List[Post] = await PostsService(PostsBody, auth=user.token.token_string)
 
-		tags = defaultdict(lambda : 0)
+		# set up all the tags to be fetched async
+		post_tags: List[Task[TagGroups]] = list(map(lambda post : ensure_future(self.fetchTagsByPost(user, post.post_id)), posts))
 
-		for post in posts :
-			postTags = await self.fetchTagsByPost(user, post.post_id)
+		tags = defaultdict(lambda : defaultdict(lambda : 0))
 
-			for tag in flatten(postTags) :
-				tags[tag] += 1
+		for tag_set in post_tags :
+			for group, tag_list in tag_set.items() :
+				for tag in tag_list :
+					tags[group][tag] += 1
 
-		return list(map(lambda x : TagPortable(x[0]), sorted(tags.items(), key=lambda x : x[1], reverse=True)))[:25]
+		return TagGroups({
+			TagGroupPortable(group): list(map(
+				lambda x : TagPortable(x[0]),
+				sorted(tag_ranks.items(), key=lambda x : x[1], reverse=True)
+			))[:(25 if group == Misc else 10)]
+			for group, tag_ranks in tags.items()
+		})
