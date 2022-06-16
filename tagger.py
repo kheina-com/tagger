@@ -100,8 +100,8 @@ class Tagger(SqlInterface, Hashable) :
 
 		await self.query_async("""
 			DELETE FROM kheina.public.tag_inheritance
-				USING kheina.public.tags as t1
-					AND kheina.public.tags as t2
+				USING kheina.public.tags as t1,
+					kheina.public.tags as t2
 			WHERE tag_inheritance.parent = t1.tag_id
 				AND t1.tag = %s
 				AND tag_inheritance.child = t2.tag_id
