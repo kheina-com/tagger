@@ -1,6 +1,5 @@
-from models import InheritRequest, LookupRequest, Tag, TagGroups, TagPortable, TagsRequest, UpdateRequest
+from models import InheritRequest, LookupRequest, Tag, TagGroups, TagPortable, TagsRequest, RemoveInheritance, UpdateRequest
 from kh_common.server import Request, ServerApp, NoContentResponse
-from kh_common.auth import Scope
 from tagger import Tagger
 from typing import List
 
@@ -38,20 +37,27 @@ async def v1RemoveTags(req: Request, body: TagsRequest) :
 
 @app.post('/v1/inherit_tag', responses={ 204: { 'model': None } }, status_code=204)
 async def v1InheritTag(req: Request, body: InheritRequest) :
-	await req.user.authenticated()
-	tagger.inheritTag(
-		req.user.user_id,
+	await tagger.inheritTag(
+		req.user,
 		body.parent_tag,
 		body.child_tag,
 		body.deprecate,
-		Scope.admin in req.user.scope,
+	)
+	return NoContentResponse
+
+
+@app.post('/v1/remove_inheritance', responses={ 204: { 'model': None } }, status_code=204)
+async def v1RemoveInheritance(req: Request, body: RemoveInheritance) :
+	await tagger.removeInheritance(
+		req.user,
+		body.parent_tag,
+		body.child_tag,
 	)
 	return NoContentResponse
 
 
 @app.post('/v1/update_tag', responses={ 204: { 'model': None } }, status_code=204)
 async def v1UpdateTag(req: Request, body: UpdateRequest) :
-	await req.user.authenticated()
 	tagger.updateTag(
 		req.user,
 		body.tag,

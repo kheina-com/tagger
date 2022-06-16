@@ -8,12 +8,11 @@ from asyncio import ensure_future, Task, wait
 from kh_common.models.privacy import Privacy
 from psycopg2.errors import NotNullViolation
 from psycopg2.errors import UniqueViolation
-from kh_common.models.auth import KhUser
+from kh_common.auth import KhUser, Scope
 from kh_common.sql import SqlInterface
 from kh_common.hashing import Hashable
 from kh_common.gateway import Gateway
 from collections import defaultdict
-from kh_common.auth import Scope
 
 
 UsersService = Gateway(users_host + '/v1/fetch_user/{handle}', UserPortable)
@@ -83,13 +82,32 @@ class Tagger(SqlInterface, Hashable) :
 
 	@ArgsCache(60)
 	@HttpErrorHandler('inheriting a tag')
-	def inheritTag(self, user_id: int, parent_tag: str, child_tag: str, deprecate:bool=False, admin:bool=False) :
-		self._validateAdmin(admin)
+	async def inheritTag(self, user: KhUser, parent_tag: str, child_tag: str, deprecate:bool=False) :
+		await user.verify_scope(Scope.admin)
 
-		data = self.query("""
+		await self.query_async("""
 			CALL kheina.public.inherit_tag(%s, %s, %s, %s);
 			""",
-			(user_id, parent_tag, child_tag.lower(), deprecate),
+			(user.user_id, parent_tag.lower(), child_tag.lower(), deprecate),
+			commit=True,
+		)
+
+
+	@ArgsCache(60)
+	@HttpErrorHandler('removing tag inheritance')
+	async def removeInheritance(self, user: KhUser, parent_tag: str, child_tag: str) :
+		await user.verify_scope(Scope.admin)
+
+		await self.query_async("""
+			DELETE FROM kheina.public.tag_inheritance
+				USING kheina.public.tags as t1
+					AND kheina.public.tags as t2
+			WHERE tag_inheritance.parent = t1.tag_id
+				AND t1.tag = %s
+				AND tag_inheritance.child = t2.tag_id
+				AND t2.tag = %s;
+			""",
+			(parent_tag.lower(), child_tag.lower()),
 			commit=True,
 		)
 
@@ -110,7 +128,7 @@ class Tagger(SqlInterface, Hashable) :
 				FROM kheina.public.tags
 				WHERE tags.tag = %s
 				""",
-				(tag,),
+				(tag.lower(),),
 				fetch_one=True,
 			)
 

@@ -19,11 +19,13 @@ class TagsRequest(PostRequest) :
 	tags: List[str]
 
 
-class InheritRequest(BaseModel) :
+class RemoveInheritance(BaseModel) :
 	parent_tag: str
 	child_tag: str
+
+
+class InheritRequest(RemoveInheritance) :
 	deprecate: Optional[bool]
-	admin: Optional[bool]
 
 
 class UpdateRequest(BaseModel) :
@@ -31,7 +33,6 @@ class UpdateRequest(BaseModel) :
 	name: Optional[str]
 	tag_class: Optional[str]
 	owner: Optional[str]
-	admin: Optional[bool]
 	description: Optional[str]
 
 
