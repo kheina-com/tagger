@@ -1,6 +1,7 @@
 from typing import List
 
 from kh_common.auth import Scope
+from kh_common.exceptions.http_error import Forbidden
 from kh_common.server import NoContentResponse, Request, ServerApp
 
 from models import InheritRequest, LookupRequest, RemoveInheritance, Tag, TagGroups, TagPortable, TagsRequest, UpdateRequest
@@ -63,8 +64,8 @@ async def v1RemoveInheritance(req: Request, body: RemoveInheritance) :
 async def v1UpdateTag(req: Request, body: UpdateRequest) :
 	await req.user.authenticated()
 
-	if Scope.mod not in req.user.scope :
-		body.deprecated = None
+	if Scope.mod not in req.user.scope and body.deprecated is not None :
+		raise Forbidden('only mods can edit the deprecated status of a tag.')
 
 	tagger.updateTag(
 		req.user,
