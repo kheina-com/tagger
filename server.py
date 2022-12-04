@@ -1,7 +1,10 @@
-from models import InheritRequest, LookupRequest, Tag, TagGroups, TagPortable, TagsRequest, RemoveInheritance, UpdateRequest
-from kh_common.server import Request, ServerApp, NoContentResponse
-from tagger import Tagger
 from typing import List
+
+from kh_common.auth import Scope
+from kh_common.server import NoContentResponse, Request, ServerApp
+
+from models import InheritRequest, LookupRequest, RemoveInheritance, Tag, TagGroups, TagPortable, TagsRequest, UpdateRequest
+from tagger import Tagger
 
 
 app = ServerApp(auth_required=False)
@@ -58,6 +61,10 @@ async def v1RemoveInheritance(req: Request, body: RemoveInheritance) :
 
 @app.post('/v1/update_tag', responses={ 204: { 'model': None } }, status_code=204)
 async def v1UpdateTag(req: Request, body: UpdateRequest) :
+
+	if not req.user.verify_scope(Scope.mod, raise_error=False) :
+		body.deprecated = None
+
 	tagger.updateTag(
 		req.user,
 		body.tag,
@@ -65,6 +72,7 @@ async def v1UpdateTag(req: Request, body: UpdateRequest) :
 		body.tag_class,
 		body.owner,
 		body.description,
+		body.deprecated,
 	)
 	return NoContentResponse
 

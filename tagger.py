@@ -1,18 +1,19 @@
-from kh_common.exceptions.http_error import BadRequest, Conflict, Forbidden, NotFound, HttpErrorHandler
-from models import Post, Tag, TagGroupPortable, TagGroups, TagPortable
-from kh_common.config.constants import posts_host, users_host
-from typing import Dict, List, Optional, Tuple, Union
-from kh_common.caching import ArgsCache, SimpleCache
-from kh_common.models.user import UserPortable
-from asyncio import ensure_future, Task, wait
-from kh_common.models.privacy import Privacy
-from psycopg2.errors import NotNullViolation
-from psycopg2.errors import UniqueViolation
-from kh_common.auth import KhUser, Scope
-from kh_common.sql import SqlInterface
-from kh_common.hashing import Hashable
-from kh_common.gateway import Gateway
+from asyncio import Task, ensure_future, wait
 from collections import defaultdict
+from typing import Dict, List, Optional, Tuple, Union
+
+from kh_common.auth import KhUser, Scope
+from kh_common.caching import ArgsCache, SimpleCache
+from kh_common.config.constants import posts_host, users_host
+from kh_common.exceptions.http_error import BadRequest, Conflict, Forbidden, HttpErrorHandler, NotFound
+from kh_common.gateway import Gateway
+from kh_common.hashing import Hashable
+from kh_common.models.privacy import Privacy
+from kh_common.models.user import UserPortable
+from kh_common.sql import SqlInterface
+from psycopg2.errors import NotNullViolation, UniqueViolation
+
+from models import Post, Tag, TagGroupPortable, TagGroups, TagPortable
 
 
 UsersService = Gateway(users_host + '/v1/fetch_user/{handle}', UserPortable)
@@ -114,7 +115,7 @@ class Tagger(SqlInterface, Hashable) :
 
 	@ArgsCache(60)
 	@HttpErrorHandler('updating a tag')
-	def updateTag(self, user: KhUser, tag: str, name: str, tag_class: str, owner: str, description: str) :
+	def updateTag(self, user: KhUser, tag: str, name: str, tag_class: str, owner: str, description: str, deprecated: bool = None) :
 		query = []
 		params = []
 
@@ -153,6 +154,10 @@ class Tagger(SqlInterface, Hashable) :
 				self._validateDescription(description)
 				query.append('description = %s')
 				params.append(description)
+
+			if deprecated is not None :
+				query.append('deprecated = %s')
+				params.append(deprecated)
 
 			try :
 				transaction.query(f"""
