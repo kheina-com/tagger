@@ -35,7 +35,7 @@ class UpdateRequest(BaseModel) :
 	tag_class: Optional[str]
 	owner: Optional[str]
 	description: Optional[str]
-	deprecated: Optional[bool]
+	deprecated: Optional[bool] = None
 
 
 @unique
