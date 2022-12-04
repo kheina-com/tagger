@@ -62,7 +62,7 @@ async def v1RemoveInheritance(req: Request, body: RemoveInheritance) :
 @app.post('/v1/update_tag', responses={ 204: { 'model': None } }, status_code=204)
 async def v1UpdateTag(req: Request, body: UpdateRequest) :
 
-	if not req.user.verify_scope(Scope.mod, raise_error=False) :
+	if not await req.user.verify_scope(Scope.mod, raise_error=False) :
 		body.deprecated = None
 
 	tagger.updateTag(
