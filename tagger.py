@@ -13,6 +13,7 @@ from kh_common.models.privacy import Privacy
 from kh_common.models.user import UserPortable
 from kh_common.sql import SqlInterface
 from psycopg2.errors import NotNullViolation, UniqueViolation
+from kh_common.utilities import flatten
 
 from models import Post, Tag, TagGroupPortable, TagGroups, TagPortable
 
@@ -94,34 +95,53 @@ class Tagger(SqlInterface, Hashable) :
 		)
 
 
+	def _decrement_tag_count(self, tag: str) -> None :
+		self._populate_tag_cache(tag)
+		KeyValueStore._client.increment(
+			(CountKVS._namespace, CountKVS._set, tag),
+			'data',
+			1,
+			meta={
+				'ttl': -1,
+			},
+			policy={
+				'max_retries': 3,
+			},
+		)
+
+
 	@ArgsCache(60)
 	@HttpErrorHandler('adding tags to post')
-	def addTags(self, user_id: int, post_id: str, tags: Tuple[str]) :
+	async def addTags(self, user: KhUser, post_id: str, tags: Tuple[str]) :
 		self._validatePostId(post_id)
 
 		self.query("""
 			CALL kheina.public.add_tags(%s, %s, %s);
 			""",
-			(post_id, user_id, list(map(str.lower, tags))),
+			(post_id, user.user_id, list(map(str.lower, tags))),
 			commit=True,
 		)
 
-		all_tags = self._pullAllTags()
-		for tag in tags :
-			all_tags[tag].increment(1)
+		existing = set(flatten(await self.fetchTagsByPost(user, post_id)))
+		for tag in set(tags) - existing :
+			self._increment_tag_count(tag)
 
 
 	@ArgsCache(60)
 	@HttpErrorHandler('removing tags from post')
-	def removeTags(self, user_id: int, post_id: str, tags: Tuple[str]) :
+	async def removeTags(self, user: KhUser, post_id: str, tags: Tuple[str]) :
 		self._validatePostId(post_id)
 
 		self.query("""
 			CALL kheina.public.remove_tags(%s, %s, %s);
 			""",
-			(post_id, user_id, list(map(str.lower, tags))),
+			(post_id, user.user_id, list(map(str.lower, tags))),
 			commit=True,
 		)
+
+		existing = set(flatten(await self.fetchTagsByPost(user, post_id)))
+		for tag in set(tags) - existing :
+			self._decrement_tag_count(tag)
 
 
 	@ArgsCache(60)

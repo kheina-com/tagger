@@ -20,8 +20,8 @@ async def shutdown() :
 @app.post('/v1/add_tags', responses={ 204: { 'model': None } }, status_code=204)
 async def v1AddTags(req: Request, body: TagsRequest) :
 	await req.user.authenticated()
-	tagger.addTags(
-		req.user.user_id,
+	await tagger.addTags(
+		req.user,
 		body.post_id,
 		tuple(body.tags),
 	)
@@ -31,8 +31,8 @@ async def v1AddTags(req: Request, body: TagsRequest) :
 @app.post('/v1/remove_tags', responses={ 204: { 'model': None } }, status_code=204)
 async def v1RemoveTags(req: Request, body: TagsRequest) :
 	await req.user.authenticated()
-	tagger.removeTags(
-		req.user.user_id,
+	await tagger.removeTags(
+		req.user,
 		body.post_id,
 		tuple(body.tags),
 	)
