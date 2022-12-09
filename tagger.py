@@ -341,7 +341,7 @@ class Tagger(SqlInterface, Hashable) :
 				count=self._get_tag_count(tag['tag']),
 			)
 
-		tag['count'] = self._get_tag_count(tag['tag']),
+		tag['count'] = self._get_tag_count(tag['tag'])
 		return Tag.parse_obj(tag)
 
 
