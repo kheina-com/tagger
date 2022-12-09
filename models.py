@@ -6,6 +6,7 @@ from kh_common.models.privacy import Privacy
 from kh_common.models.rating import Rating
 from kh_common.models.user import UserPortable
 from pydantic import BaseModel
+from kh_common.caching.integer import Integer
 
 
 class LookupRequest(BaseModel) :
@@ -63,6 +64,7 @@ class Tag(BaseModel) :
 	deprecated: bool
 	inherited_tags: List[TagPortable]
 	description: Optional[str]
+	count: int
 
 
 class Score(BaseModel) :

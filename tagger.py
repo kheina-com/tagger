@@ -11,6 +11,7 @@ from kh_common.hashing import Hashable
 from kh_common.models.privacy import Privacy
 from kh_common.models.user import UserPortable
 from kh_common.sql import SqlInterface
+from kh_common.caching.key_value_store import KeyValueStore
 from psycopg2.errors import NotNullViolation, UniqueViolation
 
 from models import Post, Tag, TagGroupPortable, TagGroups, TagPortable
@@ -20,6 +21,7 @@ UsersService = Gateway(users_host + '/v1/fetch_user/{handle}', UserPortable)
 PostsService = Gateway(posts_host + '/v1/fetch_my_posts', List[Post], method='POST')
 PostsBody = { 'sort': 'new', 'count': 64, 'page': 1 }
 Misc: TagGroupPortable = TagGroupPortable('misc')
+CountKVS: KeyValueStore = KeyValueStore('kheina', 'tag_count')
 
 
 class Tagger(SqlInterface, Hashable) :
@@ -55,6 +57,43 @@ class Tagger(SqlInterface, Hashable) :
 		return { x[0]: Privacy[x[1]] for x in data if x[1] in Privacy.__members__ }
 
 
+	def _populate_tag_cache(self, tag: str) -> None :
+		if not CountKVS.exists(tag) :
+			# we gotta populate it here (sad)
+			data = self.query("""
+				SELECT count(tag_post.post_id)
+				FROM kheina.public.tags
+					INNER JOIN kheina.public.tag_post
+						ON tags.tag_id = tag_post.tag_id
+				WHERE tags.tag = %s
+					AND tags.deprecated = false;
+				""",
+				(tag,),
+				fetch_one=True,
+			)
+			CountKVS.put(tag, int(data[0]), -1)
+
+
+	def _get_tag_count(self, tag: str) -> int :
+		self._populate_tag_cache(tag)
+		return CountKVS.get(tag)
+
+
+	def _increment_tag_count(self, tag: str) -> None :
+		self._populate_tag_cache(tag)
+		KeyValueStore._client.increment(
+			(CountKVS._namespace, CountKVS._set, tag),
+			'data',
+			1,
+			meta={
+				'ttl': -1,
+			},
+			policy={
+				'max_retries': 3,
+			},
+		)
+
+
 	@ArgsCache(60)
 	@HttpErrorHandler('adding tags to post')
 	def addTags(self, user_id: int, post_id: str, tags: Tuple[str]) :
@@ -66,6 +105,10 @@ class Tagger(SqlInterface, Hashable) :
 			(post_id, user_id, list(map(str.lower, tags))),
 			commit=True,
 		)
+
+		all_tags = self._pullAllTags()
+		for tag in tags :
+			all_tags[tag].increment(1)
 
 
 	@ArgsCache(60)
@@ -183,12 +226,13 @@ class Tagger(SqlInterface, Hashable) :
 		data = [
 			Tag(
 				**load,
-				owner = await UsersService(
+				owner=await UsersService(
 					handle=load['handle'],
 					auth=user.token.token_string if user.token else None,
 				),
+				count=self._get_tag_count(tag),
 			)
-			for _, load in self._pullAllTags().items() if load['handle'] == handle
+			for tag, load in self._pullAllTags().items() if load['handle'] == handle
 		]
 
 		if not data :
@@ -286,7 +330,7 @@ class Tagger(SqlInterface, Hashable) :
 		}
 
 
-	async def _populate_tag_owner(self, user: KhUser, tag: Dict[str, Union[TagPortable, TagGroupPortable, bool, List[TagPortable], str]]) :
+	async def _populate_tag_misc(self, user: KhUser, tag: Dict[str, Union[TagPortable, TagGroupPortable, bool, List[TagPortable], str]]) -> Tag :
 		if tag['handle'] :
 			return Tag(
 				**tag,
@@ -294,7 +338,10 @@ class Tagger(SqlInterface, Hashable) :
 					handle=tag['handle'],
 					auth=user.token.token_string if user.token else None,
 				),
+				count=self._get_tag_count(tag['tag']),
 			)
+
+		tag['count'] = self._get_tag_count(tag['tag']),
 		return Tag.parse_obj(tag)
 
 
@@ -309,7 +356,7 @@ class Tagger(SqlInterface, Hashable) :
 			if not tag.startswith(t) :
 				continue
 
-			tags.append(ensure_future(self._populate_tag_owner(user, load)))
+			tags.append(ensure_future(self._populate_tag_misc(user, load)))
 
 		await wait(tags)
 
@@ -323,7 +370,7 @@ class Tagger(SqlInterface, Hashable) :
 		if tag not in data :
 			raise NotFound('the provided tag does not exist.', tag=tag)
 
-		return await self._populate_tag_owner(user, data[tag])
+		return await self._populate_tag_misc(user, data[tag])
 
 
 	@ArgsCache(60)
