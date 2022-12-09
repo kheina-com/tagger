@@ -12,8 +12,8 @@ from kh_common.hashing import Hashable
 from kh_common.models.privacy import Privacy
 from kh_common.models.user import UserPortable
 from kh_common.sql import SqlInterface
-from psycopg2.errors import NotNullViolation, UniqueViolation
 from kh_common.utilities import flatten
+from psycopg2.errors import NotNullViolation, UniqueViolation
 
 from models import Post, Tag, TagGroupPortable, TagGroups, TagPortable
 
