@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 from kh_common.auth import KhUser, Scope
 from kh_common.caching import ArgsCache, SimpleCache
+from kh_common.caching.key_value_store import KeyValueStore
 from kh_common.config.constants import posts_host, users_host
 from kh_common.exceptions.http_error import BadRequest, Conflict, Forbidden, HttpErrorHandler, NotFound
 from kh_common.gateway import Gateway
@@ -11,7 +12,6 @@ from kh_common.hashing import Hashable
 from kh_common.models.privacy import Privacy
 from kh_common.models.user import UserPortable
 from kh_common.sql import SqlInterface
-from kh_common.caching.key_value_store import KeyValueStore
 from psycopg2.errors import NotNullViolation, UniqueViolation
 
 from models import Post, Tag, TagGroupPortable, TagGroups, TagPortable
@@ -334,7 +334,7 @@ class Tagger(SqlInterface, Hashable) :
 		if tag['handle'] :
 			return Tag(
 				**tag,
-				owner = await UsersService(
+				owner=await UsersService(
 					handle=tag['handle'],
 					auth=user.token.token_string if user.token else None,
 				),

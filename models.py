@@ -6,7 +6,6 @@ from kh_common.models.privacy import Privacy
 from kh_common.models.rating import Rating
 from kh_common.models.user import UserPortable
 from pydantic import BaseModel
-from kh_common.caching.integer import Integer
 
 
 class LookupRequest(BaseModel) :
