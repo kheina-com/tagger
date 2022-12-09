@@ -19,7 +19,8 @@ from models import Post, Tag, TagGroupPortable, TagGroups, TagPortable
 
 
 UsersService = Gateway(users_host + '/v1/fetch_user/{handle}', UserPortable)
-PostsService = Gateway(posts_host + '/v1/fetch_my_posts', List[Post], method='POST')
+MyPostsService = Gateway(posts_host + '/v1/fetch_my_posts', List[Post], method='POST')
+PostsService = Gateway(posts_host + '/v1/post/{post}', Post, method='POST')
 PostsBody = { 'sort': 'new', 'count': 64, 'page': 1 }
 Misc: TagGroupPortable = TagGroupPortable('misc')
 CountKVS: KeyValueStore = KeyValueStore('kheina', 'tag_count')
@@ -62,12 +63,14 @@ class Tagger(SqlInterface, Hashable) :
 		if not CountKVS.exists(tag) :
 			# we gotta populate it here (sad)
 			data = self.query("""
-				SELECT count(tag_post.post_id)
+				SELECT COUNT(1)
 				FROM kheina.public.tags
 					INNER JOIN kheina.public.tag_post
 						ON tags.tag_id = tag_post.tag_id
-				WHERE tags.tag = %s
-					AND tags.deprecated = false;
+					INNER JOIN kheina.public.posts
+						ON tag_post.post_id = posts.post_id
+							AND posts.privacy_id = privacy_to_id('public')
+				WHERE tags.tag = %s;
 				""",
 				(tag,),
 				fetch_one=True,
@@ -122,9 +125,11 @@ class Tagger(SqlInterface, Hashable) :
 			commit=True,
 		)
 
-		existing = set(flatten(await self.fetchTagsByPost(user, post_id)))
-		for tag in set(tags) - existing :
-			self._increment_tag_count(tag)
+		post: Post = await PostsService(post=post_id, auth=user.token.token_string if user.token else None)
+		if post.privacy == Privacy.public :
+			existing = set(flatten(await self.fetchTagsByPost(user, post_id)))
+			for tag in set(tags) - existing :
+				self._increment_tag_count(tag)
 
 
 	@ArgsCache(60)
@@ -139,9 +144,11 @@ class Tagger(SqlInterface, Hashable) :
 			commit=True,
 		)
 
-		existing = set(flatten(await self.fetchTagsByPost(user, post_id)))
-		for tag in set(tags) - existing :
-			self._decrement_tag_count(tag)
+		post: Post = await PostsService(post=post_id, auth=user.token.token_string if user.token else None)
+		if post.privacy == Privacy.public :
+			existing = set(flatten(await self.fetchTagsByPost(user, post_id)))
+			for tag in set(tags) - existing :
+				self._decrement_tag_count(tag)
 
 
 	@ArgsCache(60)
@@ -396,7 +403,7 @@ class Tagger(SqlInterface, Hashable) :
 	@ArgsCache(60)
 	@HttpErrorHandler('fetching frequently used tags')
 	async def frequentlyUsed(self, user: KhUser) -> TagGroups :
-		posts: List[Post] = await PostsService(PostsBody, auth=user.token.token_string)
+		posts: List[Post] = await MyPostsService(PostsBody, auth=user.token.token_string)
 
 		# set up all the tags to be fetched async
 		post_tags: List[Task[TagGroups]] = list(map(lambda post : ensure_future(self.fetchTagsByPost(user, post.post_id)), posts))
