@@ -8,7 +8,25 @@ from models import InheritRequest, LookupRequest, RemoveInheritance, Tag, TagGro
 from tagger import Tagger
 
 
-app = ServerApp(auth_required=False)
+app = ServerApp(
+	auth_required = False,
+	allowed_hosts = [
+		'localhost',
+		'127.0.0.1',
+		'*.kheina.com',
+		'kheina.com',
+		'*.fuzz.ly',
+		'fuzz.ly',
+	],
+	allowed_origins = [
+		'localhost',
+		'127.0.0.1',
+		'dev.kheina.com',
+		'kheina.com',
+		'dev.fuzz.ly',
+		'fuzz.ly',
+	],
+)
 tagger = Tagger()
 
 
