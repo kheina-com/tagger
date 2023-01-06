@@ -76,18 +76,3 @@ class Score(BaseModel) :
 class MediaType(BaseModel) :
 	file_type: str
 	mime_type: str
-
-class Post(BaseModel) :
-	post_id: str
-	title: Optional[str]
-	description: Optional[str]
-	user: UserPortable
-	score: Optional[Score]
-	rating: Rating
-	parent: Optional[str]
-	privacy: Privacy
-	created: Optional[datetime]
-	updated: Optional[datetime]
-	filename: Optional[str]
-	media_type: Optional[MediaType]
-	blocked: bool

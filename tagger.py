@@ -15,12 +15,13 @@ from kh_common.sql import SqlInterface
 from kh_common.utilities import flatten
 from psycopg2.errors import NotNullViolation, UniqueViolation
 
-from models import Post, Tag, TagGroupPortable, TagGroups, TagPortable
+from models import Tag, TagGroupPortable, TagGroups, TagPortable
+from fuzzly_posts.models import Post
+from fuzzly_posts import PostGateway, MyPostsGateway
 
 
 UsersService = Gateway(users_host + '/v1/fetch_user/{handle}', UserPortable)
 MyPostsService = Gateway(posts_host + '/v1/fetch_my_posts', List[Post], method='POST')
-PostsService = Gateway(posts_host + '/v1/post/{post}', Post, method='POST')
 PostsBody = { 'sort': 'new', 'count': 64, 'page': 1 }
 Misc: TagGroupPortable = TagGroupPortable('misc')
 CountKVS: KeyValueStore = KeyValueStore('kheina', 'tag_count')
@@ -125,7 +126,7 @@ class Tagger(SqlInterface, Hashable) :
 			commit=True,
 		)
 
-		post: Post = await PostsService(post=post_id, auth=user.token.token_string if user.token else None)
+		post: Post = await PostGateway(post=post_id, auth=user.token.token_string if user.token else None)
 		if post.privacy == Privacy.public :
 			existing = set(flatten(await self.fetchTagsByPost(user, post_id)))
 			for tag in set(tags) - existing :
@@ -144,7 +145,7 @@ class Tagger(SqlInterface, Hashable) :
 			commit=True,
 		)
 
-		post: Post = await PostsService(post=post_id, auth=user.token.token_string if user.token else None)
+		post: Post = await PostGateway(post=post_id, auth=user.token.token_string if user.token else None)
 		if post.privacy == Privacy.public :
 			existing = set(flatten(await self.fetchTagsByPost(user, post_id)))
 			for tag in set(tags) - existing :
@@ -403,7 +404,7 @@ class Tagger(SqlInterface, Hashable) :
 	@ArgsCache(60)
 	@HttpErrorHandler('fetching frequently used tags')
 	async def frequentlyUsed(self, user: KhUser) -> TagGroups :
-		posts: List[Post] = await MyPostsService(PostsBody, auth=user.token.token_string)
+		posts: List[Post] = await MyPostsGateway(PostsBody, auth=user.token.token_string)
 
 		# set up all the tags to be fetched async
 		post_tags: List[Task[TagGroups]] = list(map(lambda post : ensure_future(self.fetchTagsByPost(user, post.post_id)), posts))
