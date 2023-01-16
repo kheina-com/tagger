@@ -18,6 +18,8 @@ from psycopg2.errors import NotNullViolation, UniqueViolation
 from models import Tag, TagGroupPortable, TagGroups, TagPortable
 from fuzzly_posts.models import Post
 from fuzzly_posts import PostGateway, MyPostsGateway
+from kh_common.utilities import int_from_bytes
+from kh_common.base64 import b64decode
 
 
 UsersService = Gateway(users_host + '/v1/fetch_user/{handle}', UserPortable)
@@ -37,6 +39,8 @@ class Tagger(SqlInterface, Hashable) :
 	def _validatePostId(self, post_id: str) :
 		if len(post_id) != 8 :
 			raise BadRequest('the given post id is invalid.', post_id=post_id)
+
+		return int_from_bytes(b64decode(post_id))
 
 
 	def _validateAdmin(self, admin: bool) :
@@ -117,12 +121,12 @@ class Tagger(SqlInterface, Hashable) :
 	@ArgsCache(60)
 	@HttpErrorHandler('adding tags to post')
 	async def addTags(self, user: KhUser, post_id: str, tags: Tuple[str]) :
-		self._validatePostId(post_id)
+		internal_post_id: int = self._validatePostId(post_id)
 
 		self.query("""
 			CALL kheina.public.add_tags(%s, %s, %s);
 			""",
-			(post_id, user.user_id, list(map(str.lower, tags))),
+			(internal_post_id, user.user_id, list(map(str.lower, tags))),
 			commit=True,
 		)
 
@@ -136,12 +140,12 @@ class Tagger(SqlInterface, Hashable) :
 	@ArgsCache(60)
 	@HttpErrorHandler('removing tags from post')
 	async def removeTags(self, user: KhUser, post_id: str, tags: Tuple[str]) :
-		self._validatePostId(post_id)
+		internal_post_id: int = self._validatePostId(post_id)
 
 		self.query("""
 			CALL kheina.public.remove_tags(%s, %s, %s);
 			""",
-			(post_id, user.user_id, list(map(str.lower, tags))),
+			(internal_post_id, user.user_id, list(map(str.lower, tags))),
 			commit=True,
 		)
 
@@ -270,7 +274,7 @@ class Tagger(SqlInterface, Hashable) :
 
 
 	@ArgsCache(5)
-	def _fetchTagsByPost(self, post_id: str) :
+	def _fetchTagsByPost(self, post_id: int) :
 		data = self.query("""
 			SELECT tag_classes.class, array_agg(tags.tag), posts.privacy_id, posts.uploader
 			FROM kheina.public.posts
@@ -304,9 +308,9 @@ class Tagger(SqlInterface, Hashable) :
 
 	@HttpErrorHandler('fetching tags by post')
 	async def fetchTagsByPost(self, user: KhUser, post_id: str) -> TagGroups :
-		self._validatePostId(post_id)
+		internal_post_id: int = self._validatePostId(post_id)
 
-		data = self._fetchTagsByPost(post_id)
+		data = self._fetchTagsByPost(internal_post_id)
 
 		if (
 			data['privacy'] not in { Privacy.public, Privacy.unlisted }
