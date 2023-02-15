@@ -248,7 +248,7 @@ class Tagger(SqlInterface) :
 		return [
 			InternalTag(
 				name=row[0],
-				group=TagGroupPortable(row[1]),
+				group=row[1],
 				deprecated=row[2],
 				inherited_tags=list(filter(None, row[3])),
 				owner=row[4],
@@ -340,7 +340,7 @@ class Tagger(SqlInterface) :
 		return {
 			row[0]: InternalTag(
 				name=row[0],
-				group=TagGroupPortable(row[1]),
+				group=row[1],
 				deprecated=row[2],
 				inherited_tags=list(filter(None, row[3])),
 				owner=row[4],
@@ -399,7 +399,7 @@ class Tagger(SqlInterface) :
 
 		return InternalTag(
 			name=data[0],
-			group=TagGroupPortable(data[1]),
+			group=data[1],
 			deprecated=data[2],
 			inherited_tags=list(filter(None, data[3])),
 			owner=data[4],
