@@ -1,67 +1,33 @@
 from asyncio import Task, ensure_future, wait
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
+from fuzzly import FuzzlyClient
+from fuzzly.internal import InternalClient
+from fuzzly.models.internal import InternalPost, InternalTag, TagKVS
+from fuzzly.models.post import PostId, Privacy
+from fuzzly.models.tag import Tag, TagGroupPortable, TagGroups
 from kh_common.auth import KhUser, Scope
-from kh_common.caching import ArgsCache, SimpleCache
+from kh_common.caching import AerospikeCache, SimpleCache
 from kh_common.caching.key_value_store import KeyValueStore
-from kh_common.config.constants import posts_host, users_host
+from kh_common.config.credentials import fuzzly_client_token
 from kh_common.exceptions.http_error import BadRequest, Conflict, Forbidden, HttpErrorHandler, NotFound
-from kh_common.gateway import Gateway
-from kh_common.hashing import Hashable
-from kh_common.models.privacy import Privacy
-from kh_common.models.user import UserPortable
 from kh_common.sql import SqlInterface
 from kh_common.utilities import flatten
 from psycopg2.errors import NotNullViolation, UniqueViolation
 
-from models import Tag, TagGroupPortable, TagGroups, TagPortable
-from fuzzly_posts.models import Post
-from fuzzly_posts import PostGateway, MyPostsGateway
-from kh_common.utilities import int_from_bytes
-from kh_common.base64 import b64decode
 
-
-UsersService = Gateway(users_host + '/v1/fetch_user/{handle}', UserPortable)
-MyPostsService = Gateway(posts_host + '/v1/fetch_my_posts', List[Post], method='POST')
 PostsBody = { 'sort': 'new', 'count': 64, 'page': 1 }
 Misc: TagGroupPortable = TagGroupPortable('misc')
 CountKVS: KeyValueStore = KeyValueStore('kheina', 'tag_count')
+iclient: InternalClient = InternalClient(fuzzly_client_token)
 
 
-class Tagger(SqlInterface, Hashable) :
-
-	def __init__(self) :
-		Hashable.__init__(self)
-		SqlInterface.__init__(self)
-
-
-	def _validatePostId(self, post_id: str) :
-		if len(post_id) != 8 :
-			raise BadRequest('the given post id is invalid.', post_id=post_id)
-
-		return int_from_bytes(b64decode(post_id))
-
-
-	def _validateAdmin(self, admin: bool) :
-		if not admin :
-			raise Forbidden('You must be the tag owner or a mod to edit a tag.')
-
+class Tagger(SqlInterface) :
 
 	def _validateDescription(self, description: str) :
 		if len(description) > 1000 :
 			raise BadRequest('the given description is invalid, description cannot be over 1,000 characters in length.', description=description)
-
-
-	@SimpleCache(600)
-	def _get_privacy_map(self) :
-		data = self.query("""
-			SELECT privacy_id, type
-			FROM kheina.public.privacy;
-			""",
-			fetch_all=True,
-		)
-		return { x[0]: Privacy[x[1]] for x in data if x[1] in Privacy.__members__ }
 
 
 	def _populate_tag_cache(self, tag: str) -> None :
@@ -108,7 +74,7 @@ class Tagger(SqlInterface, Hashable) :
 		KeyValueStore._client.increment(
 			(CountKVS._namespace, CountKVS._set, tag),
 			'data',
-			1,
+			-1,
 			meta={
 				'ttl': -1,
 			},
@@ -118,45 +84,42 @@ class Tagger(SqlInterface, Hashable) :
 		)
 
 
-	@ArgsCache(60)
 	@HttpErrorHandler('adding tags to post')
-	async def addTags(self, user: KhUser, post_id: str, tags: Tuple[str]) :
-		internal_post_id: int = self._validatePostId(post_id)
-
-		self.query("""
+	async def addTags(self, user: KhUser, post_id: PostId, tags: Tuple[str]) :
+		await self.query_async("""
 			CALL kheina.public.add_tags(%s, %s, %s);
 			""",
-			(internal_post_id, user.user_id, list(map(str.lower, tags))),
+			(post_id.int(), user.user_id, list(map(str.lower, tags))),
 			commit=True,
 		)
 
-		post: Post = await PostGateway(post=post_id, auth=user.token.token_string if user.token else None)
+		post: InternalPost = await iclient.post(post_id)
 		if post.privacy == Privacy.public :
-			existing = set(flatten(await self.fetchTagsByPost(user, post_id)))
-			for tag in set(tags) - existing :
+			existing = set(flatten(await self._fetch_tags_by_post(post_id)))
+			for tag in set(tags) - existing :  # increment tags that didn't already exist
 				self._increment_tag_count(tag)
 
+		TagKVS.remove(f'post.{post_id}')
 
-	@ArgsCache(60)
+
 	@HttpErrorHandler('removing tags from post')
-	async def removeTags(self, user: KhUser, post_id: str, tags: Tuple[str]) :
-		internal_post_id: int = self._validatePostId(post_id)
-
-		self.query("""
+	async def removeTags(self, user: KhUser, post_id: PostId, tags: Tuple[str]) :
+		await self.query_async("""
 			CALL kheina.public.remove_tags(%s, %s, %s);
 			""",
-			(internal_post_id, user.user_id, list(map(str.lower, tags))),
+			(post_id.int(), user.user_id, list(map(str.lower, tags))),
 			commit=True,
 		)
 
-		post: Post = await PostGateway(post=post_id, auth=user.token.token_string if user.token else None)
+		post: InternalPost = await iclient.post(post_id)
 		if post.privacy == Privacy.public :
-			existing = set(flatten(await self.fetchTagsByPost(user, post_id)))
-			for tag in set(tags) - existing :
+			existing = set(flatten(await self._fetch_tags_by_post(post_id)))
+			for tag in set(tags) & existing :  # decrement only the tags that already existed
 				self._decrement_tag_count(tag)
 
+		TagKVS.remove(f'post.{post_id}')
 
-	@ArgsCache(60)
+
 	@HttpErrorHandler('inheriting a tag')
 	async def inheritTag(self, user: KhUser, parent_tag: str, child_tag: str, deprecate:bool=False) :
 		await user.verify_scope(Scope.admin)
@@ -168,8 +131,12 @@ class Tagger(SqlInterface, Hashable) :
 			commit=True,
 		)
 
+		itag: InternalTag = await TagKVS.get_async(parent_tag)
+		if itag :
+			itag.inherited_tags.append(child_tag)
+			TagKVS.put(itag.name, itag)
 
-	@ArgsCache(60)
+
 	@HttpErrorHandler('removing tag inheritance')
 	async def removeInheritance(self, user: KhUser, parent_tag: str, child_tag: str) :
 		await user.verify_scope(Scope.admin)
@@ -179,103 +146,135 @@ class Tagger(SqlInterface, Hashable) :
 				USING kheina.public.tags as t1,
 					kheina.public.tags as t2
 			WHERE tag_inheritance.parent = t1.tag_id
-				AND t1.tag = %s
+				AND t1.tag = lower(%s)
 				AND tag_inheritance.child = t2.tag_id
-				AND t2.tag = %s;
+				AND t2.tag = lower(%s);
 			""",
 			(parent_tag.lower(), child_tag.lower()),
 			commit=True,
 		)
 
+		itag: InternalTag = await TagKVS.get_async(parent_tag)
+		if itag :
+			itag.inherited_tags.remove(child_tag)
+			TagKVS.put(itag.name, itag)
 
-	@ArgsCache(60)
-	@HttpErrorHandler('updating a tag')
-	def updateTag(self, user: KhUser, tag: str, name: str, tag_class: str, owner: str, description: str, deprecated: bool = None) :
-		query = []
-		params = []
 
-		if not any([name, tag_class, owner, description, deprecated is not None]) :
+	@HttpErrorHandler('updating a tag', handlers = {
+		UniqueViolation: (Conflict, 'A tag with that name already exists.'),
+		UniqueViolation: (NotNullViolation, 'The tag group you entered could not be found or does not exist.'),
+	})
+	async def updateTag(self, user: KhUser, tag: str, name: str, group: TagGroupPortable, owner: str, description: str, deprecated: bool = None) :
+		if not any([name, group, owner, description, deprecated is not None]) :
 			raise BadRequest('no params were provided.')
 
-		with self.transaction() as transaction :
-			data = transaction.query(
-				"""
-				SELECT tags.owner
-				FROM kheina.public.tags
-				WHERE tags.tag = %s
-				""",
-				(tag.lower(),),
-				fetch_one=True,
+		query: List[str] = []
+		params: List[Any] = []
+
+		itag = await self._fetch_tag(tag)
+
+		if user.user_id != itag.owner and Scope.mod not in user.scope :
+			raise Forbidden('You must be the tag owner or a mod to edit a tag.')
+
+		if group :
+			query.append('class_id = tag_class_to_id(%s)')
+			itag.group = group
+			params.append(group.value)
+
+		if name :
+			name = name.lower()
+			query.append('tag = %s')
+			itag.name = name
+			params.append(name)
+
+		if owner :
+			user_id = await iclient.user_handle_to_id(owner)
+			query.append('owner = %s')
+			itag.owner = user_id
+			params.append(user_id)
+
+		if description :
+			self._validateDescription(description)
+			query.append('description = %s')
+			itag.description = description
+			params.append(description)
+
+		if deprecated is not None :
+			query.append('deprecated = %s')
+			itag.deprecated = deprecated
+			params.append(deprecated)
+
+		await self.query_async(f"""
+			UPDATE kheina.public.tags
+			SET {','.join(query)}
+			WHERE tags.tag = %s
+			""",
+			params + [tag],
+		)
+
+		if tag != name :
+			# the tag name was updated, so we need to delete the old one
+			TagKVS.remove(tag)
+
+		TagKVS.put(itag.name, itag)
+
+
+	@AerospikeCache('kheina', 'tags', 'user.{user_id}', _kvs=TagKVS)
+	async def _fetch_user_tags(self, user_id: int) -> List[InternalTag]:
+		data = await self.query_async("""
+			SELECT
+				tags.tag,
+				tag_classes.class,
+				tags.deprecated,
+				array_agg(t2.tag),
+				users.user_id,
+				tags.description
+			FROM tags
+				INNER JOIN tag_classes
+					ON tag_classes.class_id = tags.class_id
+				LEFT JOIN tag_inheritance
+					ON tag_inheritance.parent = tags.tag_id
+				LEFT JOIN tags as t2
+					ON t2.tag_id = tag_inheritance.child
+				LEFT JOIN users
+					ON users.user_id = tags.owner
+			WHERE users.user_id = %s
+			GROUP BY tags.tag_id, tag_classes.class_id, users.user_id;
+			""",
+			(user_id,),
+			fetch_all=True,
+		)
+
+		return [
+			InternalTag(
+				name=row[0],
+				group=TagGroupPortable(row[1]),
+				deprecated=row[2],
+				inherited_tags=list(filter(None, row[3])),
+				owner=row[4],
+				description=row[5],
 			)
-
-			current_owner = data[0] if data else None
-
-			if user.user_id != current_owner and Scope.mod not in user.scope :
-				raise Forbidden('You must be the tag owner or a mod to edit a tag.')
-
-			if tag_class :
-				query.append('class_id = tag_class_to_id(%s)')
-				params.append(tag_class)
-
-			if name :
-				query.append('tag = %s')
-				params.append(name.lower())
-
-			if owner :
-				query.append('owner = user_to_id(%s)')
-				params.append(owner)
-
-			if description :
-				self._validateDescription(description)
-				query.append('description = %s')
-				params.append(description)
-
-			if deprecated is not None :
-				query.append('deprecated = %s')
-				params.append(deprecated)
-
-			try :
-				transaction.query(f"""
-					UPDATE kheina.public.tags
-					SET {','.join(query)}
-					WHERE tags.tag = %s
-					""",
-					params + [tag],
-				)
-
-			except NotNullViolation :
-				raise BadRequest('The tag class you entered could not be found or does not exist.')
-
-			except UniqueViolation :
-				raise Conflict('A tag with that name already exists.')
-
-			transaction.commit()
-
-
-	@ArgsCache(60)
-	@HttpErrorHandler('fetching user-owned tags')
-	async def fetchTagsByUser(self, user: KhUser, handle: str) :
-		data = [
-			Tag(
-				**load,
-				owner=await UsersService(
-					handle=load['handle'],
-					auth=user.token.token_string if user.token else None,
-				),
-				count=self._get_tag_count(tag),
-			)
-			for tag, load in self._pullAllTags().items() if load['handle'] == handle
+			for row in data
 		]
+
+
+	@HttpErrorHandler('fetching user-owned tags')
+	async def fetchTagsByUser(self, user: KhUser, handle: str) -> List[Tag] :
+		data = await self._fetch_user_tags(await iclient.user_handle_to_id(handle))
 
 		if not data :
 			raise NotFound('the provided user does not exist or the user does not own any tags.', handle=handle)
 
-		return data
+		tags: List[Task[Tag]] = list(map(lambda t : ensure_future(t.tag(iclient, user)), data))
+		await wait(tags)
+
+		return list(map(Task.result, tags))
 
 
-	@ArgsCache(5)
-	def _fetchTagsByPost(self, post_id: int) :
-		data = self.query("""
+	# TODO: figure out a way that we can increase this TTL (updating inheritance won't be reflected in cache)
+	@AerospikeCache('kheina', 'tags', 'post.{post_id}', TTL_minutes=1, _kvs=TagKVS)
+	async def _fetch_tags_by_post(self, post_id: PostId) -> TagGroups :
+		data = await self.query_async("""
 			SELECT tag_classes.class, array_agg(tags.tag), posts.privacy_id, posts.uploader
 			FROM kheina.public.posts
 				LEFT JOIN kheina.public.tag_post
@@ -295,45 +294,34 @@ class Tagger(SqlInterface, Hashable) :
 		if not data :
 			raise NotFound("the provided post does not exist or you don't have access to it.", post_id=post_id)
 
-		return {
-			'tags': TagGroups({
-				TagGroupPortable(i[0]): sorted(map(TagPortable, filter(None, i[1])))
-				for i in data
-				if i[0]
-			}),
-			'privacy': self._get_privacy_map()[data[0][2]],
-			'user_id': data[0][3],
-		}
+		return TagGroups({
+			TagGroupPortable(i[0]): sorted(filter(None, i[1]))
+			for i in data
+			if i[0]
+		})
 
 
 	@HttpErrorHandler('fetching tags by post')
-	async def fetchTagsByPost(self, user: KhUser, post_id: str) -> TagGroups :
-		internal_post_id: int = self._validatePostId(post_id)
+	async def fetchTagsByPost(self, user: KhUser, post_id: PostId) -> TagGroups :
+		post: Task[InternalPost] = ensure_future(iclient.post(post_id))
+		tags: Task[TagGroups] = ensure_future(self._fetch_tags_by_post(post_id))
 
-		data = self._fetchTagsByPost(internal_post_id)
-
-		if (
-			data['privacy'] not in { Privacy.public, Privacy.unlisted }
-			and (
-				data['user_id'] != user.user_id
-				or not await user.authenticated(raise_error=False)
-			)
-		) :
+		if not (await post).authorized(iclient, user) :
 			# the post was found and returned, but the user shouldn't have access to it or isn't authenticated
 			raise NotFound("the provided post does not exist or you don't have access to it.", post_id=post_id)
 
-		return data['tags']
+		return await tags
 
 
 	@SimpleCache(60)
-	def _pullAllTags(self) :
-		data = self.query("""
+	async def _pullAllTags(self) -> Dict[str, InternalTag] :
+		data = await self.query_async("""
 			SELECT
-				tag_classes.class,
 				tags.tag,
+				tag_classes.class,
 				tags.deprecated,
 				array_agg(t2.tag),
-				users.handle,
+				users.user_id,
 				tags.description
 			FROM tags
 				INNER JOIN tag_classes
@@ -350,68 +338,87 @@ class Tagger(SqlInterface, Hashable) :
 		)
 
 		return {
-			row[1]: {
-				'tag': TagPortable(row[1]),
-				'group': TagGroupPortable(row[0]),
-				'deprecated': row[2],
-				'inherited_tags': list(map(TagPortable, filter(None, row[3]))),
-				'handle': row[4],
-				'description': row[5],
-			}
+			row[0]: InternalTag(
+				name=row[0],
+				group=TagGroupPortable(row[1]),
+				deprecated=row[2],
+				inherited_tags=list(filter(None, row[3])),
+				owner=row[4],
+				description=row[5],
+			)
 			for row in data
 		}
 
 
-	async def _populate_tag_misc(self, user: KhUser, tag: Dict[str, Union[TagPortable, TagGroupPortable, bool, List[TagPortable], str]]) -> Tag :
-		if tag['handle'] :
-			return Tag(
-				**tag,
-				owner=await UsersService(
-					handle=tag['handle'],
-					auth=user.token.token_string if user.token else None,
-				),
-				count=self._get_tag_count(tag['tag']),
-			)
-
-		tag['count'] = self._get_tag_count(tag['tag'])
-		return Tag.parse_obj(tag)
-
-
 	@HttpErrorHandler('looking up tags')
-	async def tagLookup(self, user: KhUser, tag: Optional[str] = None) :
-		t: str = tag or ''
+	async def tagLookup(self, user: KhUser, tag: Optional[str] = None) -> Task[Tag] :
+		tag = tag or ''
 
-		tags: List[Tag] = []
+		tags: List[Task[Tag]] = []
 
-		for tag, load in self._pullAllTags().items() :
+		for name, itag in (await self._pullAllTags()).items() :
 
-			if not tag.startswith(t) :
+			if not name.startswith(tag) :
 				continue
 
-			tags.append(ensure_future(self._populate_tag_misc(user, load)))
+			tags.append(ensure_future(itag.tag(iclient, user)))
 
 		await wait(tags)
 
 		return list(map(Task.result, tags))
 
 
-	@HttpErrorHandler('fetching tag')
-	async def fetchTag(self, user: KhUser, tag: str) :
-		data = self._pullAllTags()
+	@AerospikeCache('kheina', 'tags', '{tag}', _kvs=TagKVS)
+	async def _fetch_tag(self, tag: str) -> InternalTag :
+		data = await self.query_async("""
+			SELECT
+				tags.tag,
+				tag_classes.class,
+				tags.deprecated,
+				array_agg(t2.tag),
+				users.user_id,
+				tags.description
+			FROM tags
+				INNER JOIN tag_classes
+					ON tag_classes.class_id = tags.class_id
+				LEFT JOIN tag_inheritance
+					ON tag_inheritance.parent = tags.tag_id
+				LEFT JOIN tags as t2
+					ON t2.tag_id = tag_inheritance.child
+				LEFT JOIN users
+					ON users.user_id = tags.owner
+			WHERE tags.tag = %s
+			GROUP BY tags.tag_id, tag_classes.class_id, users.user_id;
+			""",
+			(tag,),
+			fetch_one=True,
+		)
 
-		if tag not in data :
+		if not data :
 			raise NotFound('the provided tag does not exist.', tag=tag)
 
-		return await self._populate_tag_misc(user, data[tag])
+		return InternalTag(
+			name=data[0],
+			group=TagGroupPortable(data[1]),
+			deprecated=data[2],
+			inherited_tags=list(filter(None, data[3])),
+			owner=data[4],
+			description=data[5],
+		)
 
 
-	@ArgsCache(60)
-	@HttpErrorHandler('fetching frequently used tags')
-	async def frequentlyUsed(self, user: KhUser) -> TagGroups :
-		posts: List[Post] = await MyPostsGateway(PostsBody, auth=user.token.token_string)
+	@HttpErrorHandler('fetching tag')
+	async def fetchTag(self, user: KhUser, tag: str) -> Tag :
+		itag = await self._fetch_tag(tag)
+		return await itag.tag(iclient, user)
+
+
+	@AerospikeCache('kheina', 'tags', 'freq.{user_id}', _kvs=TagKVS)
+	async def _frequently_used(self, user_id: int) -> TagGroups :
+		posts: List[InternalPost] = await iclient.user_posts(user_id)
 
 		# set up all the tags to be fetched async
-		post_tags: List[Task[TagGroups]] = list(map(lambda post : ensure_future(self.fetchTagsByPost(user, post.post_id)), posts))
+		post_tags: List[Task[TagGroups]] = list(map(lambda post : ensure_future(self._fetch_tags_by_post(post.post_id)), posts))
 
 		tags = defaultdict(lambda : defaultdict(lambda : 0))
 
@@ -421,9 +428,11 @@ class Tagger(SqlInterface, Hashable) :
 					tags[group][tag] += 1
 
 		return TagGroups({
-			TagGroupPortable(group): list(map(
-				lambda x : TagPortable(x[0]),
-				sorted(tag_ranks.items(), key=lambda x : x[1], reverse=True)
-			))[:(25 if group == Misc else 10)]
+			TagGroupPortable(group): list(sorted(tag_ranks.items(), key=lambda x : x[1], reverse=True))[:(25 if group == Misc else 10)]
 			for group, tag_ranks in tags.items()
 		})
+
+
+	@HttpErrorHandler('fetching frequently used tags')
+	async def frequentlyUsed(self, user: KhUser) -> TagGroups :
+		return await self._frequently_used(user.user_id)

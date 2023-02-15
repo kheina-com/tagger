@@ -1,2 +1,2 @@
 kh-common[aerospike,auth,logging,sql]~=0.6.6
-fuzzly_posts~=0.0.3
+fuzzly~=0.0.2

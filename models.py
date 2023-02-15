@@ -1,10 +1,8 @@
-from datetime import datetime
 from enum import Enum, unique
 from typing import Dict, List, Optional
 
-from kh_common.models.privacy import Privacy
-from kh_common.models.rating import Rating
-from kh_common.models.user import UserPortable
+from fuzzly_posts.models import PostId, PostIdValidator
+from fuzzly_users.models import UserPortable
 from pydantic import BaseModel
 
 
@@ -12,11 +10,10 @@ class LookupRequest(BaseModel) :
 	tag: Optional[str]
 
 
-class PostRequest(BaseModel) :
-	post_id: str
+class TagsRequest(BaseModel) :
+	_post_id_converter = PostIdValidator
 
-
-class TagsRequest(PostRequest) :
+	post_id: PostId
 	tags: List[str]
 
 
@@ -30,7 +27,6 @@ class InheritRequest(RemoveInheritance) :
 
 
 class UpdateRequest(BaseModel) :
-	tag: str
 	name: Optional[str]
 	tag_class: Optional[str]
 	owner: Optional[str]
@@ -66,13 +62,10 @@ class Tag(BaseModel) :
 	count: int
 
 
-class Score(BaseModel) :
-	up: int
-	down: int
-	total: int
-	user_vote: Optional[int]
-
-
-class MediaType(BaseModel) :
-	file_type: str
-	mime_type: str
+class InternalTag(BaseModel) :
+	tag: str
+	owner: Optional[int]
+	group: str
+	deprecated: bool
+	inherited_tags: List[str]
+	description: Optional[str]

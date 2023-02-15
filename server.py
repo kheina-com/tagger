@@ -1,10 +1,11 @@
 from typing import List
 
+from fuzzly.models.tag import Tag, TagGroups
 from kh_common.auth import Scope
 from kh_common.exceptions.http_error import Forbidden
-from kh_common.server import NoContentResponse, Request, ServerApp
+from kh_common.server import Request, ServerApp
 
-from models import InheritRequest, LookupRequest, RemoveInheritance, Tag, TagGroups, TagPortable, TagsRequest, UpdateRequest
+from models import InheritRequest, LookupRequest, RemoveInheritance, TagsRequest, UpdateRequest
 from tagger import Tagger
 
 
@@ -35,7 +36,7 @@ async def shutdown() :
 	tagger.close()
 
 
-@app.post('/v1/add_tags', responses={ 204: { 'model': None } }, status_code=204)
+@app.post('/v1/add_tags', status_code=204)
 async def v1AddTags(req: Request, body: TagsRequest) :
 	await req.user.authenticated()
 	await tagger.addTags(
@@ -43,10 +44,9 @@ async def v1AddTags(req: Request, body: TagsRequest) :
 		body.post_id,
 		tuple(body.tags),
 	)
-	return NoContentResponse
 
 
-@app.post('/v1/remove_tags', responses={ 204: { 'model': None } }, status_code=204)
+@app.post('/v1/remove_tags', status_code=204)
 async def v1RemoveTags(req: Request, body: TagsRequest) :
 	await req.user.authenticated()
 	await tagger.removeTags(
@@ -54,10 +54,9 @@ async def v1RemoveTags(req: Request, body: TagsRequest) :
 		body.post_id,
 		tuple(body.tags),
 	)
-	return NoContentResponse
 
 
-@app.post('/v1/inherit_tag', responses={ 204: { 'model': None } }, status_code=204)
+@app.post('/v1/inherit_tag', status_code=204)
 async def v1InheritTag(req: Request, body: InheritRequest) :
 	await tagger.inheritTag(
 		req.user,
@@ -65,59 +64,57 @@ async def v1InheritTag(req: Request, body: InheritRequest) :
 		body.child_tag,
 		body.deprecate,
 	)
-	return NoContentResponse
 
 
-@app.post('/v1/remove_inheritance', responses={ 204: { 'model': None } }, status_code=204)
+@app.post('/v1/remove_inheritance', status_code=204)
 async def v1RemoveInheritance(req: Request, body: RemoveInheritance) :
 	await tagger.removeInheritance(
 		req.user,
 		body.parent_tag,
 		body.child_tag,
 	)
-	return NoContentResponse
 
 
-@app.post('/v1/update_tag', responses={ 204: { 'model': None } }, status_code=204)
-async def v1UpdateTag(req: Request, body: UpdateRequest) :
+@app.patch('/v1/tag/{tag}', status_code=204)
+async def v1UpdateTag(req: Request, tag: str, body: UpdateRequest) :
 	await req.user.authenticated()
 
 	if Scope.mod not in req.user.scope and body.deprecated is not None :
 		raise Forbidden('only mods can edit the deprecated status of a tag.')
 
-	tagger.updateTag(
+	await tagger.updateTag(
 		req.user,
-		body.tag,
+		tag,
 		body.name,
 		body.tag_class,
 		body.owner,
 		body.description,
 		body.deprecated,
 	)
-	return NoContentResponse
 
 
-@app.get('/v1/fetch_tags/{post_id}', responses={ 200: { 'model': TagGroups } })
+@app.get('/v1/fetch_tags/{post_id}', response_model=TagGroups)
+@app.get('/v1/post/{post_id}', response_model=TagGroups)
 async def v1FetchTags(req: Request, post_id: str) :
 	return await tagger.fetchTagsByPost(req.user, post_id)
 
 
-@app.post('/v1/lookup_tags')
+@app.post('/v1/lookup_tags', response_model=List[Tag])
 async def v1LookUpTags(req: Request, body: LookupRequest) :
 	return await tagger.tagLookup(req.user, body.tag)
 
 
-@app.get('/v1/tag/{tag}', responses={ 200: { 'model': Tag } })
+@app.get('/v1/tag/{tag}', response_model=Tag)
 async def v1FetchTag(req: Request, tag: str) :
 	return await tagger.fetchTag(req.user, tag)
 
 
-@app.get('/v1/get_user_tags/{handle}', responses={ 200: { 'model': List[Tag] } })
+@app.get('/v1/get_user_tags/{handle}', response_model=List[Tag])
 async def v1FetchUserTags(req: Request, handle: str) :
 	return await tagger.fetchTagsByUser(req.user, handle)
 
 
-@app.get('/v1/frequently_used', responses={ 200: { 'model': List[TagPortable] } })
+@app.get('/v1/frequently_used', response_model=TagGroups)
 async def v1FrequentlyUsed(req: Request) :
 	await req.user.authenticated()
 	return await tagger.frequentlyUsed(req.user)
