@@ -1,6 +1,7 @@
 from typing import List
 
 from fuzzly.models.tag import Tag, TagGroups
+from fuzzly.models.post import PostId
 from kh_common.auth import Scope
 from kh_common.exceptions.http_error import Forbidden
 from kh_common.server import Request, ServerApp
@@ -95,8 +96,9 @@ async def v1UpdateTag(req: Request, tag: str, body: UpdateRequest) :
 
 @app.get('/v1/fetch_tags/{post_id}', response_model=TagGroups)
 @app.get('/v1/post/{post_id}', response_model=TagGroups)
-async def v1FetchTags(req: Request, post_id: str) :
-	return await tagger.fetchTagsByPost(req.user, post_id)
+async def v1FetchTags(req: Request, post_id: PostId) :
+	# fastapi does not ensure that postids are in the correct form, so do it manually
+	return await tagger.fetchTagsByPost(req.user, PostId(post_id))
 
 
 @app.post('/v1/lookup_tags', response_model=List[Tag])
