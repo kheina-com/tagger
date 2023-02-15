@@ -306,7 +306,7 @@ class Tagger(SqlInterface) :
 		post: Task[InternalPost] = ensure_future(iclient.post(post_id))
 		tags: Task[TagGroups] = ensure_future(self._fetch_tags_by_post(post_id))
 
-		if not (await post).authorized(iclient, user) :
+		if not await (await post).authorized(iclient, user) :
 			# the post was found and returned, but the user shouldn't have access to it or isn't authenticated
 			raise NotFound("the provided post does not exist or you don't have access to it.", post_id=post_id)
 
