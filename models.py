@@ -1,8 +1,8 @@
 from enum import Enum, unique
 from typing import Dict, List, Optional
 
-from fuzzly_posts.models import PostId, PostIdValidator
-from fuzzly_users.models import UserPortable
+from fuzzly.models.post import PostId, PostIdValidator
+from fuzzly.models.user import UserPortable
 from pydantic import BaseModel
 
 

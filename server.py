@@ -1,7 +1,7 @@
 from typing import List
 
-from fuzzly.models.tag import Tag, TagGroups
 from fuzzly.models.post import PostId
+from fuzzly.models.tag import Tag, TagGroups
 from kh_common.auth import Scope
 from kh_common.exceptions.http_error import Forbidden
 from kh_common.server import Request, ServerApp
