@@ -2,7 +2,6 @@ from asyncio import Task, ensure_future, wait
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
-from fuzzly import FuzzlyClient
 from fuzzly.internal import InternalClient
 from fuzzly.models.internal import InternalPost, InternalTag, TagKVS
 from fuzzly.models.post import PostId, Privacy
@@ -275,17 +274,15 @@ class Tagger(SqlInterface) :
 	@AerospikeCache('kheina', 'tags', 'post.{post_id}', TTL_minutes=1, _kvs=TagKVS)
 	async def _fetch_tags_by_post(self, post_id: PostId) -> TagGroups :
 		data = await self.query_async("""
-			SELECT tag_classes.class, array_agg(tags.tag), posts.privacy_id, posts.uploader
-			FROM kheina.public.posts
-				LEFT JOIN kheina.public.tag_post
-					ON tag_post.post_id = posts.post_id
+			SELECT tag_classes.class, array_agg(tags.tag)
+			FROM kheina.public.tag_post
 				LEFT JOIN kheina.public.tags
 					ON tags.tag_id = tag_post.tag_id
 						AND tags.deprecated = false
 				LEFT JOIN kheina.public.tag_classes
 					ON tag_classes.class_id = tags.class_id
-			WHERE posts.post_id = %s
-			GROUP BY tag_classes.class_id, posts.privacy_id, posts.uploader;
+			WHERE tag_post.post_id = %s
+			GROUP BY tag_classes.class_id;
 			""",
 			(post_id.int(),),
 			fetch_all=True,
@@ -378,7 +375,7 @@ class Tagger(SqlInterface) :
 				tag_classes.class,
 				tags.deprecated,
 				array_agg(t2.tag),
-				users.user_id,
+				tags.owner,
 				tags.description
 			FROM tags
 				INNER JOIN tag_classes
@@ -387,10 +384,8 @@ class Tagger(SqlInterface) :
 					ON tag_inheritance.parent = tags.tag_id
 				LEFT JOIN tags as t2
 					ON t2.tag_id = tag_inheritance.child
-				LEFT JOIN users
-					ON users.user_id = tags.owner
 			WHERE tags.tag = %s
-			GROUP BY tags.tag_id, tag_classes.class_id, users.user_id;
+			GROUP BY tags.tag_id, tag_classes.class_id;
 			""",
 			(tag,),
 			fetch_one=True,
