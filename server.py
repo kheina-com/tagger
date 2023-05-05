@@ -36,7 +36,14 @@ tagger = Tagger()
 async def shutdown() :
 	tagger.close()
 
+################################################## INTERNAL ##################################################
+@app.get('/i1/tags/{post_id}', response_model=TagGroups)
+async def i1tags(req: Request, post_id: PostId) -> TagGroups :
+	await req.user.verify_scope(Scope.internal)
+	return await tagger._fetch_tags_by_post(PostId(post_id))
 
+
+##################################################  PUBLIC  ##################################################
 @app.post('/v1/add_tags', status_code=204)
 async def v1AddTags(req: Request, body: TagsRequest) :
 	await req.user.authenticated()
@@ -95,7 +102,7 @@ async def v1UpdateTag(req: Request, tag: str, body: UpdateRequest) :
 
 
 @app.get('/v1/fetch_tags/{post_id}', response_model=TagGroups)
-@app.get('/v1/post/{post_id}', response_model=TagGroups)
+@app.get('/v1/tags/{post_id}', response_model=TagGroups)
 async def v1FetchTags(req: Request, post_id: PostId) :
 	# fastapi does not ensure that postids are in the correct form, so do it manually
 	return await tagger.fetchTagsByPost(req.user, PostId(post_id))
