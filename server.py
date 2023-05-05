@@ -28,6 +28,11 @@ app = ServerApp(
 		'dev.fuzz.ly',
 		'fuzz.ly',
 	],
+	allowed_methods = [
+		'GET',
+		'POST',
+		'PATCH',
+	],
 )
 tagger = Tagger()
 
