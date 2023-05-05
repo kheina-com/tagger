@@ -209,6 +209,7 @@ class Tagger(SqlInterface) :
 			WHERE tags.tag = %s
 			""",
 			params + [tag],
+			commit=True,
 		)
 
 		if tag != name :
