@@ -1,8 +1,8 @@
-from enum import Enum, unique
 from typing import Dict, List, Optional
 
 from fuzzly.models.post import PostId, PostIdValidator
 from fuzzly.models.user import UserPortable
+from fuzzly.models.tag import TagGroupPortable
 from pydantic import BaseModel
 
 
@@ -28,20 +28,10 @@ class InheritRequest(RemoveInheritance) :
 
 class UpdateRequest(BaseModel) :
 	name: Optional[str]
-	tag_class: Optional[str]
+	group: Optional[TagGroupPortable]
 	owner: Optional[str]
 	description: Optional[str]
 	deprecated: Optional[bool] = None
-
-
-@unique
-class TagGroupPortable(Enum) :
-	artist: str = 'artist'
-	subject: str = 'subject'
-	sponsor: str = 'sponsor'
-	species: str = 'species'
-	gender: str = 'gender'
-	misc: str = 'misc'
 
 
 class TagPortable(str) :

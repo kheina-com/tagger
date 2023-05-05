@@ -99,7 +99,7 @@ async def v1UpdateTag(req: Request, tag: str, body: UpdateRequest) :
 		req.user,
 		tag,
 		body.name,
-		body.tag_class,
+		body.group,
 		body.owner,
 		body.description,
 		body.deprecated,
