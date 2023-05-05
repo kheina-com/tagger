@@ -290,7 +290,7 @@ class Tagger(SqlInterface) :
 		)
 
 		if not data :
-			raise NotFound("the provided post does not exist or you don't have access to it.", post_id=post_id)
+			return TagGroups()
 
 		return TagGroups({
 			TagGroupPortable(i[0]): sorted(filter(None, i[1]))
@@ -301,10 +301,14 @@ class Tagger(SqlInterface) :
 
 	@HttpErrorHandler('fetching tags by post')
 	async def fetchTagsByPost(self, user: KhUser, post_id: PostId) -> TagGroups :
-		post: Task[InternalPost] = ensure_future(iclient.post(post_id))
+		post: Task[InternalPost] = ensure_future(InternalClient.error_handler(InternalClient.post)(iclient, post_id))
 		tags: Task[TagGroups] = ensure_future(self._fetch_tags_by_post(post_id))
 
-		post: InternalPost = await post
+		try :
+			post: InternalPost = await post
+
+		except NotFound :
+			raise NotFound("the provided post does not exist or you don't have access to it.", post_id=post_id)
 
 		if not await post.authorized(iclient, user) :
 			# the post was found and returned, but the user shouldn't have access to it or isn't authenticated
@@ -411,19 +415,38 @@ class Tagger(SqlInterface) :
 		return await itag.tag(iclient, user)
 
 
-	@AerospikeCache('kheina', 'tags', 'freq.{user_id}', _kvs=TagKVS)
+	@AerospikeCache('kheina', 'tags', 'freq.{user_id}', TTL_days=1, _kvs=TagKVS)
 	async def _frequently_used(self, user_id: int) -> TagGroups :
-		posts: List[InternalPost] = await iclient.user_posts(user_id)
-
-		# set up all the tags to be fetched async
-		post_tags: List[Task[TagGroups]] = list(map(lambda post : ensure_future(self._fetch_tags_by_post(post.post_id)), posts))
+		data = await self.query_async("""
+			WITH p AS (
+				SELECT
+					posts.post_id
+				FROM kheina.public.posts
+				WHERE posts.uploader = %s
+					AND posts.privacy_id = privacy_to_id('public')
+				ORDER BY posts.created_on DESC NULLS LAST
+				LIMIT %s
+			)
+			SELECT tag_classes.class, array_agg(tags.tag)
+			FROM p
+				LEFT JOIN kheina.public.tag_post
+					ON tag_post.post_id = p.post_id
+				LEFT JOIN kheina.public.tags
+					ON tags.tag_id = tag_post.tag_id
+						AND tags.deprecated = false
+				LEFT JOIN kheina.public.tag_classes
+					ON tag_classes.class_id = tags.class_id
+			GROUP BY tag_classes.class_id;
+			""",
+			(user_id, 64),
+			fetch_all=True,
+		)
 
 		tags = defaultdict(lambda : defaultdict(lambda : 0))
 
-		for tag_set in post_tags :
-			for group, tag_list in (await tag_set).items() :
-				for tag in tag_list :
-					tags[group][tag] += 1
+		for group, tag_list in data :
+			for tag in tag_list :
+				tags[group][tag] += 1
 
 		return TagGroups({
 			TagGroupPortable(group): list(sorted(tag_ranks.items(), key=lambda x : x[1], reverse=True))[:(25 if group == Misc else 10)]

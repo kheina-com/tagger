@@ -1,8 +1,8 @@
 from typing import Dict, List, Optional
 
 from fuzzly.models.post import PostId, PostIdValidator
-from fuzzly.models.user import UserPortable
 from fuzzly.models.tag import TagGroupPortable
+from fuzzly.models.user import UserPortable
 from pydantic import BaseModel
 
 
